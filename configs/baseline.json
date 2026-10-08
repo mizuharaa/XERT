@@ -1,0 +1,10 @@
+{
+  "model_type": "baseline_mlp",
+  "epochs": 30,
+  "batch_size": 64,
+  "hidden_dim": 64,
+  "seed": 0,
+  "val_fraction": 0.2,
+  "lr": 0.001,
+  "device": "cpu"
+}

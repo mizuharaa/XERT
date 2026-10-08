@@ -1,0 +1,12 @@
+{
+  "model_type": "act",
+  "epochs": 30,
+  "batch_size": 64,
+  "chunk_size": 8,
+  "hidden_dim": 64,
+  "seed": 0,
+  "val_fraction": 0.2,
+  "lr": 0.001,
+  "kl_weight": 0.01,
+  "device": "cpu"
+}
