@@ -1,6 +1,27 @@
 # Reach: robot manipulation & learning
 
-XLeRobot arm manipulation workbench on MuJoCo + PyTorch. A C++17 port of the simulation core is in progress.
+XLeRobot arm manipulation workbench. The simulation core (physics loop, task scoring, delayed commands and the inverse-kinematics expert) is **C++17 on the MuJoCo C API**, bound to Python with pybind11. Data collection, PyTorch training, evaluation and the HTTP API are Python.
+
+## C++17 core
+
+| Path | Contents |
+|---|---|
+| `cpp/src/env.cpp` | Reset, observations, float32 action quantisation, command-delay queue, 20 physics substeps per control tick, lift/hold/settle/success/failure logic |
+| `cpp/src/ik.cpp` | Scripted pick-and-place phase schedule and damped least-squares IK (partial-pivoting 6x6 solve, joint-limit and rate clipping) |
+| `cpp/src/bindings.cpp` | pybind11 module that works in place on the Python-owned `mjModel`/`mjData`, so both sides share one MuJoCo instance |
+| `cpp/src/trials.cpp` | Standalone `reach_trials` runner for scripted trials |
+| `cpp/tests/test_core.cpp` | CTest checks: observation layout, action validation, delay queue, contact-based success |
+
+Build (Windows only: Visual Studio 2022 C++ Build Tools, CMake 3.20+, the project `.venv`; the script installs pybind11 3.1.0 if missing):
+
+```powershell
+.\scripts\build_core.ps1
+ctest --test-dir build -C Release
+.\.venv\Scripts\python.exe -m xle_workbench.cli export-bench --model build\bench.xml --positions build\positions.csv --seeds 0..8
+.\build\Release\reach_trials.exe --model build\bench.xml --positions build\positions.csv
+```
+
+The core links against the `mujoco.dll` shipped in the installed `mujoco` Python wheel (3.14.0). `scripts/equivalence_check.py` runs the original pure-Python simulator (`tests/reference_sim.py`) and the C++ core side by side: on seeds 0-15 both succeed in 426 steps with a maximum observation difference of 0.0. Scripted trials: 9/9.
 
 A local reference implementation for learning the full robotics-data loop:
 
@@ -10,7 +31,7 @@ The task uses the pinned upstream XLeRobot left-arm kinematic chain on a station
 
 The observations are simulator state. The models are a behavior-cloning MLP and a compact **state-based ACT-style CVAE Transformer**, not camera-based ACT or a pretrained VLA. See [the engineering notebook](docs/ENGINEERING_NOTEBOOK.md) and [rebuild-it-yourself guide](docs/BUILD_IT_YOURSELF.md) before changing them.
 
-**Measured status after QA:** 27 tests and 8 subtests pass. The corrected simulator completed 16/16 scripted validation trials with finger contact during lift and release before success. An independent audit and verified fixes covered simulation timing, replay, data validation and job lifecycle. The [fresh reference experiment](docs/audit/REFERENCE_POST_FIX.json) records new demonstrations, both trained models and paired evaluations under the corrected simulator. The [original experiment](docs/REFERENCE_EXPERIMENT.json) is historical evidence: scripted 9/9, each learned policy 0/9. Learned manipulation remains an open research task; passing software checks is not physical deployment or broad robustness.
+**Measured status:** 31 tests and 8 subtests pass (including exact C++ vs Python equivalence on default, delayed-command and low-friction runs), plus 2/2 CTest checks. The corrected simulator completed 16/16 scripted validation trials with finger contact during lift and release before success. An independent audit and verified fixes covered simulation timing, replay, data validation and job lifecycle. The [fresh reference experiment](docs/audit/REFERENCE_POST_FIX.json) records new demonstrations, both trained models and paired evaluations under the corrected simulator. The [original experiment](docs/REFERENCE_EXPERIMENT.json) is historical evidence: scripted 9/9, each learned policy 0/9. Learned manipulation remains an open research task; passing software checks is not physical deployment or broad robustness.
 
 ## Run the installed workspace
 
@@ -18,6 +39,7 @@ The fresh post-fix paired evaluation also scored **scripted 9/9, MLP 0/9, ACT-st
 
 ```powershell
 Set-Location reach
+.\scripts\build_core.ps1   # once, builds the C++ core
 .\.venv\Scripts\python.exe -m xle_workbench.cli serve
 ```
 

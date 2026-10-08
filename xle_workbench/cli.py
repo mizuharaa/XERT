@@ -16,6 +16,10 @@ def main():
     parser.add_argument("--data", default="data", help="Local artifact directory")
     parser.add_argument("--output", type=Path, help="Also save result JSON without shell redirection")
     commands = parser.add_subparsers(dest="command", required=True)
+    export = commands.add_parser("export-bench", help="Export the model XML and seeded block positions for reach_trials")
+    export.add_argument("--model", type=Path, required=True)
+    export.add_argument("--positions", type=Path, required=True)
+    export.add_argument("--seeds", default="0..8", help="Inclusive nonnegative seed range, e.g. 0..8")
     serve = commands.add_parser("serve", help="Start localhost API and interactive /docs")
     serve.add_argument("--port", type=int, default=8765)
     collect = commands.add_parser("collect", help="Record scripted contact-simulation demonstrations")
@@ -39,6 +43,31 @@ def main():
     smoke.add_argument("--horizon", type=int, default=600)
     smoke.add_argument("--model-type", choices=["baseline_mlp", "act"], default="baseline_mlp")
     args = parser.parse_args()
+    if args.command == "export-bench":
+        import numpy as np
+        from .sim import ManipulationEnv, model_xml
+        try:
+            first, last = map(int, args.seeds.split(".."))
+            if not 0 <= first <= last:
+                raise ValueError
+        except ValueError:
+            parser.error("--seeds must be an inclusive nonnegative range, e.g. 0..8")
+        if args.model.resolve() == args.positions.resolve():
+            parser.error("--model and --positions must be different files")
+        env = ManipulationEnv()
+        try:
+            positions = []
+            for seed in range(first, last + 1):
+                env.reset(seed)
+                positions.append(env.data.qpos[env.block_q:env.block_q+2].copy())
+            args.model.parent.mkdir(parents=True, exist_ok=True)
+            args.positions.parent.mkdir(parents=True, exist_ok=True)
+            args.model.write_text(model_xml(), encoding="utf-8")
+            np.savetxt(args.positions, positions, delimiter=",", fmt="%.17g")
+        finally:
+            env.close()
+        print(json.dumps({"model": str(args.model), "positions": str(args.positions), "trials": len(positions)}))
+        return
     if args.command == "serve":
         import uvicorn
         from .api import create_app
