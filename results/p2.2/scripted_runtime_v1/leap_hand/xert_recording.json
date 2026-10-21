@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "status": "complete",
+  "backend": "mujoco",
+  "hardware": false,
+  "embodiment": "leap_hand",
+  "joint_names": [
+    "if_mcp",
+    "if_rot",
+    "if_pip",
+    "if_dip",
+    "mf_mcp",
+    "mf_rot",
+    "mf_pip",
+    "mf_dip",
+    "rf_mcp",
+    "rf_rot",
+    "rf_pip",
+    "rf_dip",
+    "th_cmc",
+    "th_axl",
+    "th_mcp",
+    "th_ipl"
+  ],
+  "fps": 25.0,
+  "task": "Scripted motion recording round trip; task success not evaluated",
+  "task_outcome": null,
+  "source": {
+    "kind": "scripted",
+    "clock": "scripted, not elapsed real time",
+    "generator": "scripts/record_scripted_runtime.py",
+    "human_demonstrations": false,
+    "calibration": {
+      "version": 1,
+      "source": "scripted",
+      "frame_sequence": 0,
+      "t_capture": 1000000.1232567889,
+      "image_size": [
+        640,
+        480
+      ],
+      "spec_sha256": "390ba98837b875be13f9fa8897ca15fcc8e2260f54fc705ad781d6178b38c618",
+      "profile_sha256": "6a6ff5c1bce0dec9e1a1a24389686654dd4d87420e153db65da503e0f2e35b73",
+      "hands": {
+        "right": {
+          "xy": [
+            0.5,
+            0.3
+          ],
+          "palm": 0.13000000000000006,
+          "basis": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "curls": {
+            "thumb": [
+              0.8441539861131709,
+              0.0,
+              0.0
+            ],
+            "index": [
+              0.5585993153435623,
+              0.0,
+              0.0
+            ],
+            "middle": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "ring": [
+              0.46364760900080615,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "sites": {
+        "if_tip_site": {
+          "position": [
+            0.115752315980411,
+            -0.008079746717529602,
+            0.12079709500137724
+          ],
+          "rotation": [
+            [
+              6.0000359999312636e-06,
+              -0.9999999999820002,
+              1.7999823853642738e-11
+            ],
+            [
+              5.999963999470115e-06,
+              5.39998046278356e-11,
+              0.9999999999820005
+            ],
+            [
+              -0.9999999999640004,
+              -6.000035999709219e-06,
+              5.999963999747671e-06
+            ]
+          ]
+        },
+        "mf_tip_site": {
+          "position": [
+            0.11565231598041101,
+            0.0373202532824704,
+            0.12079709500137724
+          ],
+          "rotation": [
+            [
+              6.0000359999312636e-06,
+              -0.9999999999820002,
+              1.7999823853642738e-11
+            ],
+            [
+              5.999963999470115e-06,
+              5.39998046278356e-11,
+              0.9999999999820005
+            ],
+            [
+              -0.9999999999640004,
+              -6.000035999709219e-06,
+              5.999963999747671e-06
+            ]
+          ]
+        },
+        "rf_tip_site": {
+          "position": [
+            0.11565231598041117,
+            0.08272025328247094,
+            0.12079709494137687
+          ],
+          "rotation": [
+            [
+              6.0000359999312636e-06,
+              -0.9999999999820002,
+              1.7999823853642738e-11
+            ],
+            [
+              5.999963999470115e-06,
+              5.39998046278356e-11,
+              0.9999999999820005
+            ],
+            [
+              -0.9999999999640004,
+              -6.000035999709219e-06,
+              5.999963999747671e-06
+            ]
+          ]
+        },
+        "th_tip_site": {
+          "position": [
+            -0.08102243524599657,
+            -0.12226201533831321,
+            0.12137761607733431
+          ],
+          "rotation": [
+            [
+              -0.9999999999964204,
+              -2.6535978821888172e-06,
+              3.4314750092746114e-07
+            ],
+            [
+              -2.6535979999390245e-06,
+              0.9999999999964204,
+              -3.4314750107757677e-07
+            ],
+            [
+              -3.431465903507507e-07,
+              -3.431484116518705e-07,
+              -0.9999999999998823
+            ]
+          ]
+        }
+      },
+      "notes": "Image XY and palm-size depth proxy are control coordinates, not metric wrist tracking."
+    },
+    "profile_sha256": "6a6ff5c1bce0dec9e1a1a24389686654dd4d87420e153db65da503e0f2e35b73"
+  },
+  "lerobot_version": "0.6.1",
+  "state_units": "joint position radians",
+  "velocity_units": "radians per second",
+  "action_units": "absolute joint position targets in radians, after safety clamps",
+  "state_alignment": "observation before action; xert.next_observation after action",
+  "time_names": [
+    "t_control",
+    "t_sim_before",
+    "t_sim",
+    "t_capture",
+    "t_landmarks",
+    "t_ik",
+    "t_command",
+    "t_applied"
+  ],
+  "time_units": "float64 seconds",
+  "time_domains": {
+    "t_control": "nominal simulation control clock",
+    "t_sim_before": "MuJoCo simulation",
+    "t_sim": "MuJoCo simulation",
+    "t_capture": "host monotonic clock (source declares real or scripted)",
+    "t_landmarks": "host monotonic clock (source declares real or scripted)",
+    "t_ik": "host monotonic clock (source declares real or scripted)",
+    "t_command": "host monotonic clock (source declares real or scripted)",
+    "t_applied": "host monotonic clock (source declares real or scripted)"
+  },
+  "missing_values": "Numeric zero is padding only where matching presence mask is false; journal retains null",
+  "timestamp": "LeRobot timestamp is derived frame_index/fps; use xert.times for measured stages",
+  "initial_state": {
+    "q": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "qd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "t": 0.0
+  },
+  "spec_sha256": "390ba98837b875be13f9fa8897ca15fcc8e2260f54fc705ad781d6178b38c618",
+  "frames": 12
+}

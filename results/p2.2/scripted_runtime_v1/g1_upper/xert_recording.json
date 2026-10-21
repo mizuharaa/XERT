@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "status": "complete",
+  "backend": "mujoco",
+  "hardware": false,
+  "embodiment": "g1_upper",
+  "joint_names": [
+    "waist_yaw_joint",
+    "waist_roll_joint",
+    "waist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
+    "right_wrist_yaw_joint"
+  ],
+  "fps": 25.0,
+  "task": "Scripted motion recording round trip; task success not evaluated",
+  "task_outcome": null,
+  "source": {
+    "kind": "scripted",
+    "clock": "scripted, not elapsed real time",
+    "generator": "scripts/record_scripted_runtime.py",
+    "human_demonstrations": false,
+    "calibration": {
+      "version": 1,
+      "source": "scripted",
+      "frame_sequence": 0,
+      "t_capture": 1000000.1232567889,
+      "image_size": [
+        640,
+        480
+      ],
+      "spec_sha256": "4dcb59b91a5f546e11c393fc620443c5263d124e2e9174c550aa7caa39a9a082",
+      "profile_sha256": "c8218e93bf2d61d0f6e2fe4e23b561e05956cca64611ccabf6975aef0e81c8a4",
+      "hands": {
+        "left": {
+          "xy": [
+            0.5,
+            0.3
+          ],
+          "palm": 0.13000000000000006,
+          "basis": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "curls": {
+            "thumb": [
+              0.8441539861131709,
+              0.0,
+              0.0
+            ],
+            "index": [
+              0.5585993153435623,
+              0.0,
+              0.0
+            ],
+            "middle": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "ring": [
+              0.46364760900080615,
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "right": {
+          "xy": [
+            0.5,
+            0.3
+          ],
+          "palm": 0.13000000000000006,
+          "basis": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "curls": {
+            "thumb": [
+              0.8441539861131709,
+              0.0,
+              0.0
+            ],
+            "index": [
+              0.5585993153435623,
+              0.0,
+              0.0
+            ],
+            "middle": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "ring": [
+              0.46364760900080615,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "sites": {
+        "left_hand": {
+          "position": [
+            0.19977428480554452,
+            0.14866141941311575,
+            0.8882327820984778
+          ],
+          "rotation": [
+            [
+              0.9999999801369497,
+              0.00019159319330036865,
+              5.493768102472281e-05
+            ],
+            [
+              -0.0001915899764289088,
+              0.9999999799323431,
+              -5.855420423136682e-05
+            ],
+            [
+              -5.494889850922211e-05,
+              5.8543677559289116e-05,
+              0.9999999967766284
+            ]
+          ]
+        },
+        "right_hand": {
+          "position": [
+            0.19977428480554452,
+            -0.14865141941311574,
+            0.8882327820984778
+          ],
+          "rotation": [
+            [
+              0.9999999801369497,
+              -0.00019159319330036865,
+              5.493768102472281e-05
+            ],
+            [
+              0.0001915899764289088,
+              0.9999999799323431,
+              5.855420423136682e-05
+            ],
+            [
+              -5.494889850922211e-05,
+              -5.8543677559289116e-05,
+              0.9999999967766284
+            ]
+          ]
+        }
+      },
+      "notes": "Image XY and palm-size depth proxy are control coordinates, not metric wrist tracking."
+    },
+    "profile_sha256": "c8218e93bf2d61d0f6e2fe4e23b561e05956cca64611ccabf6975aef0e81c8a4"
+  },
+  "lerobot_version": "0.6.1",
+  "state_units": "joint position radians",
+  "velocity_units": "radians per second",
+  "action_units": "absolute joint position targets in radians, after safety clamps",
+  "state_alignment": "observation before action; xert.next_observation after action",
+  "time_names": [
+    "t_control",
+    "t_sim_before",
+    "t_sim",
+    "t_capture",
+    "t_landmarks",
+    "t_ik",
+    "t_command",
+    "t_applied"
+  ],
+  "time_units": "float64 seconds",
+  "time_domains": {
+    "t_control": "nominal simulation control clock",
+    "t_sim_before": "MuJoCo simulation",
+    "t_sim": "MuJoCo simulation",
+    "t_capture": "host monotonic clock (source declares real or scripted)",
+    "t_landmarks": "host monotonic clock (source declares real or scripted)",
+    "t_ik": "host monotonic clock (source declares real or scripted)",
+    "t_command": "host monotonic clock (source declares real or scripted)",
+    "t_applied": "host monotonic clock (source declares real or scripted)"
+  },
+  "missing_values": "Numeric zero is padding only where matching presence mask is false; journal retains null",
+  "timestamp": "LeRobot timestamp is derived frame_index/fps; use xert.times for measured stages",
+  "initial_state": {
+    "q": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "qd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "t": 0.0
+  },
+  "spec_sha256": "4dcb59b91a5f546e11c393fc620443c5263d124e2e9174c550aa7caa39a9a082",
+  "frames": 12
+}

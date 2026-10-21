@@ -1,0 +1,329 @@
+{
+    "codebase_version": "v3.0",
+    "fps": 25,
+    "features": {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                17
+            ],
+            "names": [
+                "waist_yaw_joint.pos",
+                "waist_roll_joint.pos",
+                "waist_pitch_joint.pos",
+                "left_shoulder_pitch_joint.pos",
+                "left_shoulder_roll_joint.pos",
+                "left_shoulder_yaw_joint.pos",
+                "left_elbow_joint.pos",
+                "left_wrist_roll_joint.pos",
+                "left_wrist_pitch_joint.pos",
+                "left_wrist_yaw_joint.pos",
+                "right_shoulder_pitch_joint.pos",
+                "right_shoulder_roll_joint.pos",
+                "right_shoulder_yaw_joint.pos",
+                "right_elbow_joint.pos",
+                "right_wrist_roll_joint.pos",
+                "right_wrist_pitch_joint.pos",
+                "right_wrist_yaw_joint.pos"
+            ]
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                17
+            ],
+            "names": [
+                "waist_yaw_joint.pos",
+                "waist_roll_joint.pos",
+                "waist_pitch_joint.pos",
+                "left_shoulder_pitch_joint.pos",
+                "left_shoulder_roll_joint.pos",
+                "left_shoulder_yaw_joint.pos",
+                "left_elbow_joint.pos",
+                "left_wrist_roll_joint.pos",
+                "left_wrist_pitch_joint.pos",
+                "left_wrist_yaw_joint.pos",
+                "right_shoulder_pitch_joint.pos",
+                "right_shoulder_roll_joint.pos",
+                "right_shoulder_yaw_joint.pos",
+                "right_elbow_joint.pos",
+                "right_wrist_roll_joint.pos",
+                "right_wrist_pitch_joint.pos",
+                "right_wrist_yaw_joint.pos"
+            ]
+        },
+        "xert.observation_velocity": {
+            "dtype": "float32",
+            "shape": [
+                17
+            ],
+            "names": [
+                "waist_yaw_joint.vel",
+                "waist_roll_joint.vel",
+                "waist_pitch_joint.vel",
+                "left_shoulder_pitch_joint.vel",
+                "left_shoulder_roll_joint.vel",
+                "left_shoulder_yaw_joint.vel",
+                "left_elbow_joint.vel",
+                "left_wrist_roll_joint.vel",
+                "left_wrist_pitch_joint.vel",
+                "left_wrist_yaw_joint.vel",
+                "right_shoulder_pitch_joint.vel",
+                "right_shoulder_roll_joint.vel",
+                "right_shoulder_yaw_joint.vel",
+                "right_elbow_joint.vel",
+                "right_wrist_roll_joint.vel",
+                "right_wrist_pitch_joint.vel",
+                "right_wrist_yaw_joint.vel"
+            ]
+        },
+        "xert.next_observation": {
+            "dtype": "float32",
+            "shape": [
+                17
+            ],
+            "names": [
+                "waist_yaw_joint.pos",
+                "waist_roll_joint.pos",
+                "waist_pitch_joint.pos",
+                "left_shoulder_pitch_joint.pos",
+                "left_shoulder_roll_joint.pos",
+                "left_shoulder_yaw_joint.pos",
+                "left_elbow_joint.pos",
+                "left_wrist_roll_joint.pos",
+                "left_wrist_pitch_joint.pos",
+                "left_wrist_yaw_joint.pos",
+                "right_shoulder_pitch_joint.pos",
+                "right_shoulder_roll_joint.pos",
+                "right_shoulder_yaw_joint.pos",
+                "right_elbow_joint.pos",
+                "right_wrist_roll_joint.pos",
+                "right_wrist_pitch_joint.pos",
+                "right_wrist_yaw_joint.pos"
+            ]
+        },
+        "xert.next_velocity": {
+            "dtype": "float32",
+            "shape": [
+                17
+            ],
+            "names": [
+                "waist_yaw_joint.vel",
+                "waist_roll_joint.vel",
+                "waist_pitch_joint.vel",
+                "left_shoulder_pitch_joint.vel",
+                "left_shoulder_roll_joint.vel",
+                "left_shoulder_yaw_joint.vel",
+                "left_elbow_joint.vel",
+                "left_wrist_roll_joint.vel",
+                "left_wrist_pitch_joint.vel",
+                "left_wrist_yaw_joint.vel",
+                "right_shoulder_pitch_joint.vel",
+                "right_shoulder_roll_joint.vel",
+                "right_shoulder_yaw_joint.vel",
+                "right_elbow_joint.vel",
+                "right_wrist_roll_joint.vel",
+                "right_wrist_pitch_joint.vel",
+                "right_wrist_yaw_joint.vel"
+            ]
+        },
+        "xert.times": {
+            "dtype": "float64",
+            "shape": [
+                8
+            ],
+            "names": [
+                "t_control",
+                "t_sim_before",
+                "t_sim",
+                "t_capture",
+                "t_landmarks",
+                "t_ik",
+                "t_command",
+                "t_applied"
+            ]
+        },
+        "xert.times_present": {
+            "dtype": "bool",
+            "shape": [
+                8
+            ],
+            "names": [
+                "t_control",
+                "t_sim_before",
+                "t_sim",
+                "t_capture",
+                "t_landmarks",
+                "t_ik",
+                "t_command",
+                "t_applied"
+            ]
+        },
+        "xert.handedness_scores": {
+            "dtype": "float32",
+            "shape": [
+                2
+            ],
+            "names": [
+                "left",
+                "right"
+            ]
+        },
+        "xert.handedness_present": {
+            "dtype": "bool",
+            "shape": [
+                2
+            ],
+            "names": [
+                "left",
+                "right"
+            ]
+        },
+        "xert.clamped": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "clamped"
+            ]
+        },
+        "xert.valid_motion": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "valid_motion"
+            ]
+        },
+        "xert.latency_sample": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "latency_sample"
+            ]
+        },
+        "xert.frame_sequence_present": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "frame_sequence_present"
+            ]
+        },
+        "xert.tracking_confidence_present": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "tracking_confidence_present"
+            ]
+        },
+        "xert.clamp_count": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "clamp_count"
+            ]
+        },
+        "xert.frame_sequence": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "frame_sequence"
+            ]
+        },
+        "xert.tracking_confidence": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": [
+                "tracking_confidence"
+            ]
+        },
+        "xert.phase": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "phase"
+            ]
+        },
+        "xert.source": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "source"
+            ]
+        },
+        "xert.events_json": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "events_json"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    },
+    "total_episodes": 1,
+    "total_frames": 12,
+    "total_tasks": 1,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": null,
+    "robot_type": "g1_upper",
+    "splits": {
+        "train": "0:1"
+    }
+}

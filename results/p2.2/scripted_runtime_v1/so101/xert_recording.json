@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "status": "complete",
+  "backend": "mujoco",
+  "hardware": false,
+  "embodiment": "so101",
+  "joint_names": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+    "gripper"
+  ],
+  "fps": 25.0,
+  "task": "Scripted motion recording round trip; task success not evaluated",
+  "task_outcome": null,
+  "source": {
+    "kind": "scripted",
+    "clock": "scripted, not elapsed real time",
+    "generator": "scripts/record_scripted_runtime.py",
+    "human_demonstrations": false,
+    "calibration": {
+      "version": 1,
+      "source": "scripted",
+      "frame_sequence": 0,
+      "t_capture": 1000000.1232567889,
+      "image_size": [
+        640,
+        480
+      ],
+      "spec_sha256": "d9770e58d6aa56ec8be603747536e301a81abf64056e5c9532d372060a191d83",
+      "profile_sha256": "632daa2f47045251de2702bb76bbcec75e40fc07b7500ecd1ed1754198af2570",
+      "hands": {
+        "right": {
+          "xy": [
+            0.5,
+            0.3
+          ],
+          "palm": 0.13000000000000006,
+          "basis": [
+            [
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "curls": {
+            "thumb": [
+              0.8441539861131709,
+              0.0,
+              0.0
+            ],
+            "index": [
+              0.5585993153435623,
+              0.0,
+              0.0
+            ],
+            "middle": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "ring": [
+              0.46364760900080615,
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "sites": {
+        "grasp": {
+          "position": [
+            0.39423449999999993,
+            0.00021634835868872217,
+            0.2262795953703573
+          ],
+          "rotation": [
+            [
+              8.077306185017008e-18,
+              -3.469446951953614e-17,
+              -0.9999999999999998
+            ],
+            [
+              -0.048660291196138815,
+              0.9988153863756337,
+              -3.469446951953614e-17
+            ],
+            [
+              0.9988153863756337,
+              0.048660291196138815,
+              -8.077306185017008e-18
+            ]
+          ]
+        }
+      },
+      "notes": "Image XY and palm-size depth proxy are control coordinates, not metric wrist tracking."
+    },
+    "profile_sha256": "632daa2f47045251de2702bb76bbcec75e40fc07b7500ecd1ed1754198af2570"
+  },
+  "lerobot_version": "0.6.1",
+  "state_units": "joint position radians",
+  "velocity_units": "radians per second",
+  "action_units": "absolute joint position targets in radians, after safety clamps",
+  "state_alignment": "observation before action; xert.next_observation after action",
+  "time_names": [
+    "t_control",
+    "t_sim_before",
+    "t_sim",
+    "t_capture",
+    "t_landmarks",
+    "t_ik",
+    "t_command",
+    "t_applied"
+  ],
+  "time_units": "float64 seconds",
+  "time_domains": {
+    "t_control": "nominal simulation control clock",
+    "t_sim_before": "MuJoCo simulation",
+    "t_sim": "MuJoCo simulation",
+    "t_capture": "host monotonic clock (source declares real or scripted)",
+    "t_landmarks": "host monotonic clock (source declares real or scripted)",
+    "t_ik": "host monotonic clock (source declares real or scripted)",
+    "t_command": "host monotonic clock (source declares real or scripted)",
+    "t_applied": "host monotonic clock (source declares real or scripted)"
+  },
+  "missing_values": "Numeric zero is padding only where matching presence mask is false; journal retains null",
+  "timestamp": "LeRobot timestamp is derived frame_index/fps; use xert.times for measured stages",
+  "initial_state": {
+    "q": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "qd": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "t": 0.0
+  },
+  "spec_sha256": "d9770e58d6aa56ec8be603747536e301a81abf64056e5c9532d372060a191d83",
+  "frames": 12
+}
