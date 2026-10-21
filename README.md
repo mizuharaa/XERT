@@ -1,4 +1,4 @@
-# Reach: robot manipulation & learning
+# XERT: robot manipulation & learning
 
 XLeRobot arm manipulation workbench. The simulation core (physics loop, task scoring, delayed commands and the inverse-kinematics expert) is **C++17 on the MuJoCo C API**, bound to Python with pybind11. Data collection, PyTorch training, evaluation and the HTTP API are Python.
 
