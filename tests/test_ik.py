@@ -64,3 +64,14 @@ def test_pinned_menagerie_assets():
         assert "LICENSE" in source["sha256"]
         for name, expected in source["sha256"].items():
             assert hashlib.sha256((manifest.parent / name).read_bytes()).hexdigest() == expected
+
+
+def test_measurement_preserves_existing_artifact(tmp_path, monkeypatch):
+    import sys
+    from scripts.measure_ik import main
+    path = tmp_path / "existing.json"
+    path.write_text("previous evidence")
+    monkeypatch.setattr(sys, "argv", ["measure_ik", "--output", str(path)])
+    with pytest.raises(SystemExit):
+        main()
+    assert path.read_text() == "previous evidence"

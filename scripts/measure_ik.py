@@ -19,6 +19,8 @@ def main():
     parser.add_argument("--spec", type=Path, default=ROOT / "xert/spec/so101.yaml")
     parser.add_argument("--output", type=Path, default=ROOT / "results/p3.2/ik_errors.json")
     args = parser.parse_args()
+    if args.output.exists():
+        parser.error("Evidence output already exists; choose a new --output to preserve ledger artifacts")
     provenance = source_provenance()
     spec = load_spec(args.spec)
     model = spec.load_model()
@@ -38,9 +40,11 @@ def main():
         error = max(float(np.linalg.norm(state.site(s).xpos - targets[s])) * 1000 for s in spec.sites)
         records.append({"seed": seed, "target_q": target_q.tolist(), "solution_q": result.tolist(), "error_mm": error})
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps({"spec": artifact_path(args.spec), "iterations": 200,
-        "damping": .01, "sampling": "rest +/- 0.25 rad, clipped to limits; position only, no collision test",
-        "records": records}, indent=2) + "\n")
+    with args.output.open("x", encoding="utf-8") as stream:
+        json.dump({"spec": artifact_path(args.spec), "iterations": 200,
+            "damping": .01, "sampling": "rest +/- 0.25 rad, clipped to limits; position only, no collision test",
+            "records": records}, stream, indent=2)
+        stream.write("\n")
     errors = [r["error_mm"] for r in records]
     for metric, value in (("ik_err_mm_mean", np.mean(errors)), ("ik_err_mm_p95", np.percentile(errors, 95)),
                            ("ik_err_mm_max", max(errors))):
