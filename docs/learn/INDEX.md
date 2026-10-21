@@ -16,6 +16,7 @@ or recorded evidence; a successful simulation check is not a hardware result.
 | P3.2 | [Generalized inverse kinematics](P3.2.md) | What does damping do when a robot cannot easily move in the requested direction? |
 | P3.3 | [Command safety](P3.3.md) | Why is clipping a position insufficient to limit speed and acceleration? |
 | P3.4 | [Shared simulation backend](P3.4.md) | What changes when adding a robot, and which controller code stays shared? |
+| P3.5 | [Webcam runtime (partial)](P3.5.md) | Why distinguish host timing, simulation timing, and camera exposure? |
 
 Use [the acceptance tracker](../MVP_PROGRESS.md) for current completion status.
 The master prompt's human-data quality experiment and hardware phases have

@@ -1,0 +1,69 @@
+name: Optional integrations
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lerobot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      HF_HUB_OFFLINE: '1'
+      HF_DATASETS_OFFLINE: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-lerobot-linux-lock.txt
+      - name: Install codec runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+      - name: Install isolated dataset dependencies
+        run: |
+          python -m venv .venv-lerobot
+          .venv-lerobot/bin/python -m pip install -r requirements-lerobot-linux-lock.txt
+          .venv-lerobot/bin/python -m pip check
+      - name: Require the real LeRobot reader and run round trips
+        run: |
+          .venv-lerobot/bin/python -c "from importlib.metadata import version; from lerobot.datasets.lerobot_dataset import LeRobotDataset; assert version('lerobot') == '0.6.1'"
+          .venv-lerobot/bin/python -m pytest -q tests/test_lerobot_export.py
+  webcam:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements-lock.txt
+            requirements-webcam-lock.txt
+      - name: Install headless runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libegl1 libgl1 libportaudio2
+      - name: Install isolated vision dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+          .venv/bin/python -m pip install -r requirements-lock.txt -r requirements-webcam-lock.txt
+          .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+          .venv/bin/python -m pip check
+      - name: Build native core
+        run: bash scripts/build_core.sh
+      - name: Verify real hand model without a camera
+        run: |
+          .venv/bin/python -m scripts.fetch_hand_model
+          .venv/bin/python -m scripts.smoke_hand_model
+      - name: Check mocked capture, mapping, runtime, and safety
+        run: .venv/bin/python -m pytest -q tests/test_runtime.py tests/test_safety.py tests/test_webcam.py

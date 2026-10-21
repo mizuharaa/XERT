@@ -24,7 +24,7 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P3.2 | Complete | [Generalized IK](learn/P3.2.md), reachable-target measurements in the ledger |
 | P3.3 | Complete | [Command limits, watchdog and emergency stop](learn/P3.3.md), regression checks |
 | P3.4 | Complete | [Shared simulation backend](learn/P3.4.md), three scripted embodiments and configuration-only extension test |
-| P3.5 | Pending | Webcam input, runtime and measured latency |
+| P3.5 | Partial | [Reviewed webcam/runtime software](learn/P3.5.md); live calibration and measured webcam latency still required |
 | P3.6 | Pending | Retarget errors on a recorded human clip |
 | P4.1 | Pending | Teleoperation collection UI |
 | P4.2 | Requires human demonstration capture | Scripted data cannot substitute |
