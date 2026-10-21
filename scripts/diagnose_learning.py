@@ -122,9 +122,13 @@ def run(args):
                   embodiment='xlerobot_left', ci95=None, seeds={'train':[args.seed], 'eval':[args.seed]},
                   config_path=ledger.artifact_path(args.output / 'config.json'),
                   artifact_paths=[ledger.artifact_path(args.output / name) for name in ('summary.json', 'traces.npz', 'joint_errors.svg', 'model.pt')],
-                  notes='Single training episode diagnostic, not held-out success or hardware evidence. Training and evaluation seed intentionally overlap.')
+                  notes=('Single training episode diagnostic, not held-out success or hardware evidence. '
+                         'Training and evaluation seed intentionally overlap. '
+                         f"Predicted replay complete: {summary['predicted_replay_complete']}; an incomplete replay is not a failed completed trial. "
+                         'Normalized observation peak is measured before optional diagnostic input masks.'))
     for metric, value, n in [('success_rate', float(summary['closed_loop_success']), 1),
-                             ('predicted_action_replay_success', float(summary['predicted_replay_success']), 1),
+                             ('predicted_action_replay_success' if summary['predicted_replay_complete'] else 'replay_completed',
+                              float(summary['predicted_replay_success']), 1),
                              ('action_mae', summary['action_mae'], len(actions)),
                              ('max_normalized_closed_observation', summary['max_normalized_closed_observation'], len(closed['actions']))]:
         ledger.append_row(ledger.new_row(**common, metric=metric, value=value, n=n))
