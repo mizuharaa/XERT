@@ -16,16 +16,16 @@ class MuJoCoBackend:
         for name in spec.joint_names:
             joint = self.model.joint(name).id
             matches = [a for a in range(self.model.nu)
-                       if self.model.actuator_trntype[a] == mujoco.mjtTrn.mjTRN_JOINT and
+                       if self.model.actuator_trntype[a] == int(mujoco.mjtTrn.mjTRN_JOINT) and
                        self.model.actuator_trnid[a, 0] == joint]
             if len(matches) != 1:
                 raise ValueError(f"Expected one direct position actuator for {name}")
             a = matches[0]
             if not (self.model.actuator_gear[a, 0] == 1 and
                     np.all(self.model.actuator_gear[a, 1:] == 0) and
-                    self.model.actuator_dyntype[a] == mujoco.mjtDyn.mjDYN_NONE and
-                    self.model.actuator_gaintype[a] == mujoco.mjtGain.mjGAIN_FIXED and
-                    self.model.actuator_biastype[a] == mujoco.mjtBias.mjBIAS_AFFINE and
+                    self.model.actuator_dyntype[a] == int(mujoco.mjtDyn.mjDYN_NONE) and
+                    self.model.actuator_gaintype[a] == int(mujoco.mjtGain.mjGAIN_FIXED) and
+                    self.model.actuator_biastype[a] == int(mujoco.mjtBias.mjBIAS_AFFINE) and
                     self.model.actuator_gainprm[a, 0] > 0 and
                     self.model.actuator_biasprm[a, 0] == 0 and
                     self.model.actuator_biasprm[a, 1] == -self.model.actuator_gainprm[a, 0]):
@@ -62,6 +62,8 @@ class MuJoCoBackend:
         if (not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all() or
                 not np.isclose(self.data.time - previous_time, 1 / self.spec.control_hz, rtol=0, atol=1e-9)):
             raise RuntimeError("Simulation produced nonfinite state or reset its clock")
+        # mj_step integrates qpos after its last position-dependent calculations.
+        mujoco.mj_forward(self.model, self.data)
         self.last_command = float(t_cmd)
 
     def close(self):

@@ -3,6 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -48,6 +49,7 @@ def main():
     parser.add_argument("--specs", type=Path, nargs="+", required=True)
     parser.add_argument("--motion", type=Path, default=ROOT / "configs/motion/scripted_offsets.json")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--corrects", type=uuid.UUID, nargs="*", default=[], help="Earlier ledger row IDs superseded by this run")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("Evidence output already exists; choose a new --output")
@@ -64,7 +66,9 @@ def main():
             embodiment=run["embodiment"], metric="rollout_steps", value=n, ci95=None, n=n,
             seeds={"train": [], "eval": []}, config_path=run["spec"],
             artifact_paths=[artifact_path(args.motion), artifact_path(args.output)],
-            notes="Finite simulated rollout from one scripted offset clip; not human demonstrations, task success, tracking-quality or hardware evidence.")
+            notes=("Finite simulated rollout from one scripted offset clip; derived site poses refreshed after integration. "
+                   "Not human demonstrations, task success, tracking-quality or hardware evidence."
+                   + (" Corrects earlier row IDs: " + ", ".join(map(str, args.corrects)) if args.corrects else "")))
         append_row(row)
         print(json.dumps(row))
 

@@ -19,7 +19,7 @@ def test_same_motion_driver_across_embodiments(name):
     spec_path = ROOT / f"xert/spec/{name}.yaml"
     spec = load_spec(spec_path)
     model = spec.load_model()
-    assert not np.any(model.jnt_type == mujoco.mjtJoint.mjJNT_FREE)
+    assert not np.any(model.jnt_type == int(mujoco.mjtJoint.mjJNT_FREE))
     motion = json.loads(MOTION.read_text())
     result = drive(spec_path, motion)
     q = np.asarray([f["q"] for f in result["records"]])
@@ -83,3 +83,12 @@ def test_backend_rejects_torque_actuators(tmp_path):
                    acceleration_limits=np.ones(1), sites=("tip",))
     with pytest.raises(ValueError, match="position servo"):
         MuJoCoBackend(spec)
+
+
+def test_sites_match_returned_integrated_state():
+    backend = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))
+    backend.send_targets(backend.spec.rest + .1, 0)
+    reported = backend.data.site("grasp").xpos.copy()
+    mujoco.mj_forward(backend.model, backend.data)
+    np.testing.assert_allclose(reported, backend.data.site("grasp").xpos, rtol=0, atol=1e-12)
+    backend.close()
