@@ -1,0 +1,77 @@
+{
+  "name": "so101",
+  "model_path": "../../assets/menagerie/robotstudio_so101/so101_xert.xml",
+  "joint_names": [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+    "gripper"
+  ],
+  "position_limits": [
+    [
+      -1.91986,
+      1.91986
+    ],
+    [
+      -1.7453293,
+      1.7453293
+    ],
+    [
+      -1.69,
+      1.69
+    ],
+    [
+      -1.65806,
+      1.65806
+    ],
+    [
+      -2.7438473,
+      2.8412063
+    ],
+    [
+      -0.17453,
+      1.7453292
+    ]
+  ],
+  "velocity_limits": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "acceleration_limits": [
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0
+  ],
+  "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "sites": [
+    "grasp"
+  ],
+  "mapping": {
+    "right_wrist": "grasp"
+  },
+  "ik_weights": {
+    "grasp": 1.0
+  },
+  "control_hz": 25,
+  "gripper": {
+    "joint": "gripper",
+    "open": 1.4,
+    "closed": 0.0
+  }
+}
