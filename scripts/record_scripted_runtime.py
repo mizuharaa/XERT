@@ -82,11 +82,13 @@ def main():
         output = args.output / robot
         records = record_scripted(spec, ROOT / f"configs/teleop/{robot}.json", output)
         verification = json.loads((output / "roundtrip.json").read_text())
+        files = sorted(path for path in output.rglob("*") if path.is_file())
         row = new_row(**provenance, slice="P2.2", experiment="scripted_runtime_v3_roundtrip_v1",
                       backend="mujoco", embodiment=robot, metric="roundtrip_max_abs_error",
                       value=verification["max_abs_error"], ci95=None, n=len(records),
                       seeds={"train": [], "eval": []}, config_path=artifact_path(spec),
-                      artifact_paths=[artifact_path(output)],
+                      artifact_paths=[artifact_path(path) for path in files],
+                      artifact_sha256={artifact_path(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in files},
                       notes="Actual LeRobot v3 reload against recorded frames. Scripted landmarks and clock; no human data, live latency, task-success or hardware claim.")
         append_row(row)
         print(json.dumps(row))
