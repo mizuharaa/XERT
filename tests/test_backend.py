@@ -16,6 +16,7 @@ from xle_workbench.api import create_app
 from xle_workbench.jobs import Jobs
 from xle_workbench import pipeline
 from xle_workbench.storage import Store, atomic_json, decode_npz, validate_arrays
+from xert.eval.ledger import read_rows
 
 torch.set_num_threads(1)
 
@@ -65,9 +66,13 @@ def test_real_pipeline_replay_train_evaluate(tmp_path):
     assert pipeline.replay(store, collection["episode_ids"][0])["matched"]
     # A tiny horizon validates wiring, explicitly not pick-place competence.
     model = pipeline.train_model(store, collection["episode_ids"],
-                                 {"epochs": 1, "hidden_dim": 16, "batch_size": 16})
+                                 {"epochs": 1, "hidden_dim": 16, "batch_size": 16, "seed": 7})
     result = pipeline.evaluate(store, [100], {"horizon": 12}, model["id"])
     assert result["trials"] == 1 and result["hardware"] is False
+    row = read_rows()[0]
+    assert row["seeds"] == {"train": [7], "eval": [100]}
+    assert row["demonstration_seeds"] == [11, 12, 13, 14]
+    assert row["ci95"] == result["success_rate_ci95"]
     with pytest.raises(ValueError, match="overlap"):
         pipeline.evaluate(store, [11], {"horizon": 12}, model["id"])
     with pytest.raises(ValueError, match="contract"):

@@ -14,9 +14,10 @@ test = ["pytest>=8", "httpx>=0.27"]
 
 [project.scripts]
 xle = "xle_workbench.cli:main"
+xert = "xert.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["xle_workbench*"]
+include = ["xle_workbench*", "xert*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

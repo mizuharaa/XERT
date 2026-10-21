@@ -71,6 +71,33 @@ For a short integration run rather than a performance experiment:
 
 Smoke runs collect four episodes, train, evaluate scripted and learned policies on the same two new seeds, and verify recorded-action replay. A successful pipeline does **not** imply the briefly trained policy succeeds at manipulation. Inspect success/failure counts separately.
 
+## Results ledger (P0.2)
+
+Completed `evaluate` calls and each condition/model evaluation inside the HTTP
+benchmark append to `results/ledger.jsonl`. Run `xert ledger show` after installing
+this checkout, or use the module directly:
+
+```powershell
+.\.venv\Scripts\python.exe -m xert ledger show
+.\.venv\Scripts\python.exe -m xle_workbench.cli evaluate --episodes 9 --seed 0
+```
+
+Rows link to the saved configuration and report, record the source commit and
+whether the working tree was dirty, and label this asset `xlerobot_left` rather
+than asserting unverified SO-101 geometry. All current rows describe MuJoCo
+simulation. Training RNG seeds are separate from demonstration seeds. A missing
+valid confidence interval stays `null`; repeated benchmark seeds are not pooled.
+Set `XERT_LEDGER_PATH` to a separate JSONL path for smoke checks or experiments
+that should not enter the canonical ledger. Pytest always uses a temporary ledger.
+
+Keep linked artifacts with any published row. A dirty source tree cannot be
+reconstructed from its commit alone. Append failures fail the operation; completed
+simulation artifacts may remain, but are not ledger-backed evidence. A corrupt or
+incomplete ledger is rejected without rewriting history. Corrections must be new
+rows referencing the old row ID, never edits or deletions.
+Paths inside this checkout are relative to its root; external artifact paths are
+absolute. Git provenance is captured before the evaluation starts.
+
 ## API flow
 
 | Endpoint | What it does |

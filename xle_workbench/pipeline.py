@@ -11,6 +11,8 @@ import time
 
 import numpy as np
 
+from xert.eval import ledger
+
 from .storage import Store, atomic_json, sha256
 
 
@@ -147,14 +149,17 @@ def wilson(successes: int, count: int) -> list[float]:
     denominator = 1 + z * z / count
     centre = (p + z * z / (2 * count)) / denominator
     margin = z * math.sqrt(p * (1 - p) / count + z * z / (4 * count * count)) / denominator
-    return [max(0.0, centre - margin), min(1.0, centre + margin)]
+    return [0.0 if successes == 0 else max(0.0, centre - margin),
+            1.0 if successes == count else min(1.0, centre + margin)]
 
 
 def evaluate(store: Store, seeds: list[int], config: dict | None = None,
-             model_id: str | None = None, progress=None, cancelled=None) -> dict:
+             model_id: str | None = None, progress=None, cancelled=None, *,
+             experiment: str | None = None) -> dict:
     from .sim import ManipulationEnv
     if not seeds or len(seeds) > 100 or len(set(seeds)) != len(seeds):
         raise ValueError("Choose 1..100 unique evaluation seeds")
+    provenance = ledger.source_provenance()
     env = ManipulationEnv(config)
     rows = []
     started = time.perf_counter()
@@ -196,7 +201,30 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
                   "elapsed_seconds": time.perf_counter() - started,
                   "runtime": {"python": platform.python_version(), "platform": platform.platform()},
                   "hardware": False, "safety_certification": False}
+        train_seeds = [policy.metadata["config"]["seed"]] if policy is not None else []
+        artifacts = [path / "metadata.json"]
+        artifacts.extend(store.path("episodes", episode["episode_id"]) / name
+                         for episode in rows for name in ("metadata.json", "episode.npz"))
+        if model_id:
+            artifacts.extend(store.path("models", model_id) / name
+                             for name in ("pipeline.json", "metadata.json", "model.pt"))
+        row = ledger.new_row(
+            **provenance, slice="P0.2", experiment=experiment or f"evaluation_{identifier}",
+            backend="mujoco", embodiment="xlerobot_left", metric="success_rate",
+            value=report["success_rate"], ci95=report["success_rate_ci95"], n=report["trials"],
+            seeds={"train": train_seeds, "eval": list(seeds)},
+            config_path=ledger.artifact_path(path / "config.json"),
+            artifact_paths=[ledger.artifact_path(item) for item in artifacts],
+            notes=("Simulation only; pinned XLeRobot left arm (asset declares so_arm100), not verified SO-101. "
+                   + report["interval_note"]),
+            evaluation_id=identifier, model_id=model_id,
+            demonstration_seeds=proof["training_source_seeds"] if proof else [])
+        report["ledger_id"] = row["id"]
+        atomic_json(path / "config.json", {"environment": env.config, "eval_seeds": seeds,
+                                          "model_id": model_id, "train_seeds": train_seeds,
+                                          "simulation": report["simulation"], **provenance})
         atomic_json(path / "metadata.json", report)
+        ledger.append_row(row)
         return report
     finally:
         env.close()
@@ -246,20 +274,21 @@ def benchmark(store: Store, seeds: list[int], conditions: list[dict], model_ids:
         raise ValueError("Choose 1..12 conditions and distinct model IDs")
     if len(seeds) * len(conditions) * (len(model_ids) + 1) > 200:
         raise ValueError("A local benchmark is limited to 200 total rollouts; split larger studies")
+    identifier, path = store.create("evaluations")
     rows = []
     total = len(conditions) * (len(model_ids) + 1)
     for condition_index, config in enumerate(conditions):
         for model_id in [None, *model_ids]:
             check_cancel(cancelled)
-            result = evaluate(store, seeds, config, model_id, cancelled=cancelled)
+            result = evaluate(store, seeds, config, model_id, cancelled=cancelled,
+                              experiment=f"benchmark_{identifier}")
             rows.append({"condition_index": condition_index, "config": result["config"],
-                         "model_id": model_id, "evaluation_id": result["id"],
+                         "model_id": model_id, "evaluation_id": result["id"], "ledger_id": result["ledger_id"],
                          "successes": result["successes"], "trials": result["trials"],
                          "success_rate": result["success_rate"], "success_rate_ci95": result["success_rate_ci95"],
                          "failure_counts": result["failure_counts"]})
             if progress:
                 progress({"completed": len(rows), "total": total, **rows[-1]})
-    identifier, path = store.create("evaluations")
     report = {"id": identifier, "kind": "paired_benchmark", "seeds": seeds, "comparisons": rows,
               "hardware": False, "safety_certification": False,
               "scope": "Same initial-state seeds per condition; simulation perturbations, not hardware robustness proof"}
