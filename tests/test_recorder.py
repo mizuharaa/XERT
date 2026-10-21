@@ -87,6 +87,23 @@ def test_empty_and_body_exception_do_not_publish(tmp_path):
     assert second.closed and not second.output.exists()
 
 
+def test_constructor_keeps_primary_failure_when_cleanup_also_fails(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from xert.data import recorder
+    def cleanup_failure():
+        raise RuntimeError("secondary cleanup failure")
+    def manifest_failure(*args):
+        raise ValueError("primary manifest failure")
+    monkeypatch.setattr(LeRobotDataset, "create", lambda **kwargs: SimpleNamespace(finalize=cleanup_failure))
+    monkeypatch.setattr(recorder, "atomic_json", manifest_failure)
+    with pytest.raises(ValueError, match="primary manifest failure") as caught:
+        make_recorder(tmp_path)
+    assert any("secondary cleanup failure" in note for note in caught.value.__notes__)
+    assert any("staging retained" in note for note in caught.value.__notes__)
+    assert not (tmp_path / "final").exists()
+
+
 @pytest.mark.parametrize("failure", ["writer", "publish_race"])
 def test_write_and_publish_failures_preserve_evidence(tmp_path, monkeypatch, failure):
     from xert.runtime.loop import run_loop

@@ -106,9 +106,16 @@ class RuntimeRecorder:
                              "spec_sha256": hashlib.sha256(Path(spec_path).read_bytes()).hexdigest()}
             atomic_json(self.staging / "xert_recording.json", self.manifest)
             self.journal = (self.staging / "xert_frames.jsonl").open("x", encoding="utf-8")
-        except BaseException:
-            if self.dataset is not None:
-                self.dataset.finalize()
+        except BaseException as exc:
+            try:
+                if self.dataset is not None:
+                    self.dataset.finalize()
+            except BaseException as cleanup:
+                exc.add_note(f"Recording initialization cleanup also failed: {cleanup!r}")
+            finally:
+                self.dataset = None
+                self.closed = True
+            exc.add_note(f"Unpublished recording staging retained at {self.staging}")
             raise
 
     def _vector(self, value):
