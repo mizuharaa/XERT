@@ -1,0 +1,335 @@
+{
+  "id": "73bb6d6451774fab9a3e594e40a823cb",
+  "model_id": null,
+  "policy": "scripted",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "config": {
+    "friction": 1.0,
+    "delay_steps": 0,
+    "horizon": 600,
+    "object_position_bounds": [
+      [
+        0.225,
+        -0.045
+      ],
+      [
+        0.255,
+        -0.015
+      ]
+    ]
+  },
+  "simulation": {
+    "observation_dim": 26,
+    "action_dim": 6,
+    "observation_names": [
+      "joint_position.Rotation_L",
+      "joint_position.Pitch_L",
+      "joint_position.Elbow_L",
+      "joint_position.Wrist_Pitch_L",
+      "joint_position.Wrist_Roll_L",
+      "joint_position.Jaw_L",
+      "joint_velocity.Rotation_L",
+      "joint_velocity.Pitch_L",
+      "joint_velocity.Elbow_L",
+      "joint_velocity.Wrist_Pitch_L",
+      "joint_velocity.Wrist_Roll_L",
+      "joint_velocity.Jaw_L",
+      "block.x",
+      "block.y",
+      "block.z",
+      "block.qw",
+      "block.qx",
+      "block.qy",
+      "block.qz",
+      "grasp.x",
+      "grasp.y",
+      "grasp.z",
+      "tray.x",
+      "tray.y",
+      "tray.z",
+      "time_fraction"
+    ],
+    "action_names": [
+      "Rotation_L",
+      "Pitch_L",
+      "Elbow_L",
+      "Wrist_Pitch_L",
+      "Wrist_Roll_L",
+      "Jaw_L"
+    ],
+    "control_hz": 25,
+    "horizon": 600,
+    "action_convention": "absolute joint position targets normalized to [-1,1] by actuator_ctrlrange",
+    "action_joint_ranges_radians": [
+      [
+        -2.1,
+        2.1
+      ],
+      [
+        -0.1,
+        3.45
+      ],
+      [
+        -0.2,
+        3.14159
+      ],
+      [
+        -1.8,
+        1.8
+      ],
+      [
+        -3.14159,
+        3.14159
+      ],
+      [
+        -0.2,
+        1.4
+      ]
+    ],
+    "observation_convention": "privileged simulator state; world XYZ metres, wxyz quaternion, joint radians, rad/s",
+    "model_sha256": "5132817066a55159c27b21534048b2c698445f91e1800b3616f5730b1972218e",
+    "source": {
+      "repository": "https://github.com/Vector-Wangel/XLeRobot",
+      "revision": "749abc837d5d771f26aeff961009c290e574b024",
+      "license": "Apache-2.0",
+      "sha256": {
+        "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "xlerobot.xml": "ba8419c18718624dc6f85577c5bb38124160483e03808b9e8c377daf89d62b56",
+        "Rotation_Pitch.stl": "4a1476f57d28d2c065bc0ede6a674cb3ebacf1193372916ef1e0ff32eeb92cf0",
+        "Rotation_Pitch_Motor.stl": "f4fbcf18d8f2e91d12a767c1679430140dce0c81ea1478cc153bfce3a162db61",
+        "Upper_Arm.stl": "d97ad37c90400fe39bb2d5ace8b4290f3d1262e13f1d4f166494421752d5f3b7",
+        "Upper_Arm_Motor.stl": "bafdb2cb9e9a884e62b5fbf15b1f706a65771da82764dbe703df128d9f34d723",
+        "Lower_Arm.stl": "a04511bc65cbb702b2d6023764de947888b06a09fbf272803f39c22724329a3e",
+        "Lower_Arm_Motor.stl": "07368fa4c50dea70e8157accee71072120c0cb374f672c85aba1d081702bc476",
+        "Wrist_Pitch_Roll.stl": "58e83ce1c8b24e1fa3a79672ea965ea4143986c81a21386dcd6da1cbcfdc94bb",
+        "Wrist_Pitch_Roll_Motor.stl": "89ac3fb1d2536fa4f7c40e7449be4b934d7d776f9cd0453c842767f980ff6c18",
+        "Fixed_Jaw_part1.stl": "a91f823092866cb519ff8b2590d6ca7ded921c70c06d64f9524fad2c244a6c62",
+        "Fixed_Jaw_part2.stl": "dd6162eb944dc700244552de36e723ba4097ccd25688f06a7413b8133f637d92",
+        "Moving_Jaw_part1.stl": "c331a7c7b7a4cdddeb894b4f72e897a2a77b549d9f2a335eea77f10a90ec8567",
+        "Moving_Jaw_part2.stl": "421a34db4d1426b1abe1f30ed73525f07674645130df94d2935b2ac2084e37e1",
+        "Moving_Jaw_part3.stl": "a0d92ac9c477f283211d3b5b925f184d7f031a2001853abfabba3c00a0a3c6b4"
+      }
+    },
+    "implementation_sha256": "0ffc3dee73e4b0dc83bcbf2c6e1ec3b34941f4cf62a3ebcd8fcd3156f0c324db",
+    "config": {
+      "friction": 1.0,
+      "delay_steps": 0,
+      "horizon": 600,
+      "object_position_bounds": [
+        [
+          0.225,
+          -0.045
+        ],
+        [
+          0.255,
+          -0.015
+        ]
+      ]
+    },
+    "simulation_only": true,
+    "mujoco_version": "3.14.0"
+  },
+  "episodes": [
+    {
+      "seed": 0,
+      "episode_id": "39c9aa3aa94a4211b478d43f258c1800",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22612249457748512,
+          0.10723389686595196,
+          0.10389224454139527
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "f2a4512237e2caccb4061d3f408f34ec8b56716bf5521ac748e761b109528daa"
+    },
+    {
+      "seed": 1,
+      "episode_id": "43761c85482b4d55a94382c5eb703563",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.2260048167652435,
+          0.10747770186102333,
+          0.10389224454040599
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "ee39764316bf70cf5654051c49758b956f7e30eb9928f1b13375127b11c3423d"
+    },
+    {
+      "seed": 2,
+      "episode_id": "e953593ba7a742ac9d0c245756cf3990",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22610274577719286,
+          0.10727990585238645,
+          0.10389224454160996
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "4e747059edfb5831d755c6f8cd5402d49c97d95630b3099e03bda80b450f69a6"
+    },
+    {
+      "seed": 3,
+      "episode_id": "e586cee7fc094a4fa530e782d45aace8",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22607490392677868,
+          0.10735610098245632,
+          0.10389224454033352
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "1287f14430eccf3458b322e39aed0bdffb344e7c19c0cc9e32019f01c97abcb0"
+    },
+    {
+      "seed": 4,
+      "episode_id": "6e7938bc47554e7f96171acc50665d9e",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22605869960544447,
+          0.10734157755891496,
+          0.10389224454207083
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "af77d4ed00d76545ca27af559e3dc1ba45fd171c73ec270da9ece88228d62b83"
+    },
+    {
+      "seed": 5,
+      "episode_id": "432685e3713949a6a88b0fc93d11b48c",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22601099911753492,
+          0.10752205376104501,
+          0.10389224453308997
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "7ef5cc652105cb392f4f1035a39704eedf8d3db95d7a35ccaf7171caffb9efe3"
+    },
+    {
+      "seed": 6,
+      "episode_id": "87481d16d86244b1b6d10d963821e5d1",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.22606478839185037,
+          0.10735003826888263,
+          0.10389224454009598
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "a522a747892402e05f15715d22edebff562fdf8e72d7e62dee354e2f6f3a6b81"
+    },
+    {
+      "seed": 7,
+      "episode_id": "e6344eb0604c4f9a902145549a7b710b",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.2259971422023974,
+          0.10749090885659063,
+          0.10389224454058146
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "fc6ba24f327a08afdeca9420fd381f5fea255275f9b0689edb321a16a504d2e9"
+    },
+    {
+      "seed": 8,
+      "episode_id": "0ff70a24f3fc46ba8f576ef3a8c5753e",
+      "steps": 426,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 426,
+        "object_position": [
+          0.2259703522336744,
+          0.10758695914212069,
+          0.10389224453841955
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "efce1130c168551351b1636bdd97d4065280d2b2b5a1913ab54e115c46887993"
+    }
+  ],
+  "successes": 9,
+  "trials": 9,
+  "success_rate": 1.0,
+  "unique_initial_states": 9,
+  "initial_states_disjoint_from_demonstrations": null,
+  "held_out": null,
+  "success_rate_ci95": [
+    0.7008472464490407,
+    1.0
+  ],
+  "interval_note": "Wilson binomial interval; omitted for repeated states or unverified demonstration disjointness. Simulator coverage is not hardware confidence.",
+  "failure_counts": {},
+  "elapsed_seconds": 5.000241200032178,
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0"
+  },
+  "hardware": false,
+  "safety_certification": false,
+  "ledger_id": "b74fdb71-f585-42a9-83ae-e51ca8f3331a"
+}
