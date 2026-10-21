@@ -1,0 +1,162 @@
+{
+  "name": "leap_hand",
+  "model_path": "../../assets/menagerie/leap_hand/right_hand_xert.xml",
+  "joint_names": [
+    "if_mcp",
+    "if_rot",
+    "if_pip",
+    "if_dip",
+    "mf_mcp",
+    "mf_rot",
+    "mf_pip",
+    "mf_dip",
+    "rf_mcp",
+    "rf_rot",
+    "rf_pip",
+    "rf_dip",
+    "th_cmc",
+    "th_axl",
+    "th_mcp",
+    "th_ipl"
+  ],
+  "position_limits": [
+    [
+      -0.314,
+      2.23
+    ],
+    [
+      -1.047,
+      1.047
+    ],
+    [
+      -0.506,
+      1.885
+    ],
+    [
+      -0.366,
+      2.042
+    ],
+    [
+      -0.314,
+      2.23
+    ],
+    [
+      -1.047,
+      1.047
+    ],
+    [
+      -0.506,
+      1.885
+    ],
+    [
+      -0.366,
+      2.042
+    ],
+    [
+      -0.314,
+      2.23
+    ],
+    [
+      -1.047,
+      1.047
+    ],
+    [
+      -0.506,
+      1.885
+    ],
+    [
+      -0.366,
+      2.042
+    ],
+    [
+      -0.349,
+      2.094
+    ],
+    [
+      -0.349,
+      2.094
+    ],
+    [
+      -0.47,
+      2.443
+    ],
+    [
+      -1.34,
+      1.88
+    ]
+  ],
+  "velocity_limits": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "acceleration_limits": [
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0
+  ],
+  "rest": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "sites": [
+    "if_tip_site",
+    "mf_tip_site",
+    "rf_tip_site",
+    "th_tip_site"
+  ],
+  "mapping": {
+    "index_tip": "if_tip_site",
+    "middle_tip": "mf_tip_site",
+    "ring_tip": "rf_tip_site",
+    "thumb_tip": "th_tip_site"
+  },
+  "ik_weights": {
+    "if_tip_site": 1.0,
+    "mf_tip_site": 1.0,
+    "rf_tip_site": 1.0,
+    "th_tip_site": 1.0
+  },
+  "control_hz": 25,
+  "gripper": {}
+}
