@@ -25,6 +25,8 @@ def main():
     collect = commands.add_parser("collect", help="Record scripted contact-simulation demonstrations")
     collect.add_argument("--episodes", type=int, default=10)
     collect.add_argument("--seed", type=int, default=0)
+    collect.add_argument('--action-noise-std', type=float, default=0.0,
+                         help='Gaussian arm-target noise; save corrective expert labels separately')
     collect.add_argument("--config", default="{}", help="JSON environment config")
     train = commands.add_parser("train", help="Train on explicit episode IDs or a collection result JSON")
     train.add_argument("--episodes", nargs="+")
@@ -77,7 +79,8 @@ def main():
     torch.set_num_threads(1)
     store = Store(args.data)
     if args.command == "collect":
-        result = pipeline.collect(store, list(range(args.seed, args.seed + args.episodes)), settings(args.config))
+        result = pipeline.collect(store, list(range(args.seed, args.seed + args.episodes)), settings(args.config),
+                                  action_noise_std=args.action_noise_std)
     elif args.command == "train":
         if bool(args.episodes) == bool(args.collection):
             parser.error("Specify exactly one of --episodes or --collection")
