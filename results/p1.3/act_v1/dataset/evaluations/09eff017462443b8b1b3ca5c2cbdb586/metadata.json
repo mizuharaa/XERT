@@ -1,0 +1,755 @@
+{
+  "id": "09eff017462443b8b1b3ca5c2cbdb586",
+  "model_id": "4c8c74734dff45d39fd7980fbc8569b0",
+  "policy": "learned",
+  "seeds": [
+    10000,
+    10001,
+    10002,
+    10003,
+    10004,
+    10005,
+    10006,
+    10007,
+    10008,
+    10009,
+    10010,
+    10011,
+    10012,
+    10013,
+    10014,
+    10015,
+    10016,
+    10017,
+    10018,
+    10019,
+    10020,
+    10021,
+    10022,
+    10023,
+    10024,
+    10025,
+    10026,
+    10027,
+    10028,
+    10029
+  ],
+  "config": {
+    "friction": 1.0,
+    "delay_steps": 0,
+    "horizon": 600,
+    "object_position_bounds": [
+      [
+        0.225,
+        -0.045
+      ],
+      [
+        0.255,
+        -0.015
+      ]
+    ]
+  },
+  "simulation": {
+    "observation_dim": 26,
+    "action_dim": 6,
+    "observation_names": [
+      "joint_position.Rotation_L",
+      "joint_position.Pitch_L",
+      "joint_position.Elbow_L",
+      "joint_position.Wrist_Pitch_L",
+      "joint_position.Wrist_Roll_L",
+      "joint_position.Jaw_L",
+      "joint_velocity.Rotation_L",
+      "joint_velocity.Pitch_L",
+      "joint_velocity.Elbow_L",
+      "joint_velocity.Wrist_Pitch_L",
+      "joint_velocity.Wrist_Roll_L",
+      "joint_velocity.Jaw_L",
+      "block.x",
+      "block.y",
+      "block.z",
+      "block.qw",
+      "block.qx",
+      "block.qy",
+      "block.qz",
+      "grasp.x",
+      "grasp.y",
+      "grasp.z",
+      "tray.x",
+      "tray.y",
+      "tray.z",
+      "time_fraction"
+    ],
+    "action_names": [
+      "Rotation_L",
+      "Pitch_L",
+      "Elbow_L",
+      "Wrist_Pitch_L",
+      "Wrist_Roll_L",
+      "Jaw_L"
+    ],
+    "control_hz": 25,
+    "horizon": 600,
+    "action_convention": "absolute joint position targets normalized to [-1,1] by actuator_ctrlrange",
+    "action_joint_ranges_radians": [
+      [
+        -2.1,
+        2.1
+      ],
+      [
+        -0.1,
+        3.45
+      ],
+      [
+        -0.2,
+        3.14159
+      ],
+      [
+        -1.8,
+        1.8
+      ],
+      [
+        -3.14159,
+        3.14159
+      ],
+      [
+        -0.2,
+        1.4
+      ]
+    ],
+    "observation_convention": "privileged simulator state; world XYZ metres, wxyz quaternion, joint radians, rad/s",
+    "model_sha256": "5132817066a55159c27b21534048b2c698445f91e1800b3616f5730b1972218e",
+    "source": {
+      "repository": "https://github.com/Vector-Wangel/XLeRobot",
+      "revision": "749abc837d5d771f26aeff961009c290e574b024",
+      "license": "Apache-2.0",
+      "sha256": {
+        "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "xlerobot.xml": "ba8419c18718624dc6f85577c5bb38124160483e03808b9e8c377daf89d62b56",
+        "Rotation_Pitch.stl": "4a1476f57d28d2c065bc0ede6a674cb3ebacf1193372916ef1e0ff32eeb92cf0",
+        "Rotation_Pitch_Motor.stl": "f4fbcf18d8f2e91d12a767c1679430140dce0c81ea1478cc153bfce3a162db61",
+        "Upper_Arm.stl": "d97ad37c90400fe39bb2d5ace8b4290f3d1262e13f1d4f166494421752d5f3b7",
+        "Upper_Arm_Motor.stl": "bafdb2cb9e9a884e62b5fbf15b1f706a65771da82764dbe703df128d9f34d723",
+        "Lower_Arm.stl": "a04511bc65cbb702b2d6023764de947888b06a09fbf272803f39c22724329a3e",
+        "Lower_Arm_Motor.stl": "07368fa4c50dea70e8157accee71072120c0cb374f672c85aba1d081702bc476",
+        "Wrist_Pitch_Roll.stl": "58e83ce1c8b24e1fa3a79672ea965ea4143986c81a21386dcd6da1cbcfdc94bb",
+        "Wrist_Pitch_Roll_Motor.stl": "89ac3fb1d2536fa4f7c40e7449be4b934d7d776f9cd0453c842767f980ff6c18",
+        "Fixed_Jaw_part1.stl": "a91f823092866cb519ff8b2590d6ca7ded921c70c06d64f9524fad2c244a6c62",
+        "Fixed_Jaw_part2.stl": "dd6162eb944dc700244552de36e723ba4097ccd25688f06a7413b8133f637d92",
+        "Moving_Jaw_part1.stl": "c331a7c7b7a4cdddeb894b4f72e897a2a77b549d9f2a335eea77f10a90ec8567",
+        "Moving_Jaw_part2.stl": "421a34db4d1426b1abe1f30ed73525f07674645130df94d2935b2ac2084e37e1",
+        "Moving_Jaw_part3.stl": "a0d92ac9c477f283211d3b5b925f184d7f031a2001853abfabba3c00a0a3c6b4"
+      }
+    },
+    "implementation_sha256": "473fff47fe0154630fa8d154d0e8f3fd7bb6131a49a8ca222d28e660f00e07b1",
+    "config": {
+      "friction": 1.0,
+      "delay_steps": 0,
+      "horizon": 600,
+      "object_position_bounds": [
+        [
+          0.225,
+          -0.045
+        ],
+        [
+          0.255,
+          -0.015
+        ]
+      ]
+    },
+    "simulation_only": true,
+    "mujoco_version": "3.14.0"
+  },
+  "episodes": [
+    {
+      "seed": 10000,
+      "episode_id": "44a6b021a37344b99aa2d68d0462f1fe",
+      "steps": 424,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 424,
+        "object_position": [
+          0.22440342864810317,
+          0.10949801432083216,
+          0.10389224455827503
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "caade79a019ddfb96289d42ba92c621d5583bddbbace42c2a66689575b9f689a"
+    },
+    {
+      "seed": 10001,
+      "episode_id": "a01e375cceac41b2afb86b5e8f44c3cf",
+      "steps": 422,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 422,
+        "object_position": [
+          0.22478305890525668,
+          0.10940989427514065,
+          0.10389224454761768
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "fa0ac4c6639ca73ee3c0216120c7d4ae1293a132480375e975442850a6dce397"
+    },
+    {
+      "seed": 10002,
+      "episode_id": "135e1d18d89a443e806548b700661006",
+      "steps": 425,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 425,
+        "object_position": [
+          0.22434446968055652,
+          0.11017693119961873,
+          0.10389224452109679
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "20f50d41a402e6b75d7a6051b51f2e46a22caf869e7d4937037103b2aa8c388b"
+    },
+    {
+      "seed": 10003,
+      "episode_id": "314ddcf5ec1e466c92d3ab13ddc10e12",
+      "steps": 419,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 419,
+        "object_position": [
+          0.2248282929582285,
+          0.10893925564383482,
+          0.10389224455275185
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "0c8abb2c2c382adf0686db06a8df0dcca7a1d0789a6c9f8ab7d6a97d4e829846"
+    },
+    {
+      "seed": 10004,
+      "episode_id": "4bc8e1072dc743fdbb79f31eade5c0f6",
+      "steps": 427,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 427,
+        "object_position": [
+          0.22459430790215196,
+          0.11025558284289584,
+          0.10389224452951941
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "eb70bc66b9bfdb2e25291a957c6962c39c81853080a516852aafa8123bed5d58"
+    },
+    {
+      "seed": 10005,
+      "episode_id": "3ceea658d8bb4c3783ae1cdde9b8d875",
+      "steps": 425,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 425,
+        "object_position": [
+          0.22380521655113889,
+          0.11038942030957483,
+          0.10389224454300838
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "41eb3f411204085c02ddffa58ec0986bd49c60f03928cf0f4d85192eb5632db1"
+    },
+    {
+      "seed": 10006,
+      "episode_id": "a673252d7ef5467ea6e139b740fd87a9",
+      "steps": 421,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 421,
+        "object_position": [
+          0.22490840132537557,
+          0.10917235743984133,
+          0.1038922445536864
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "314fcc5635e8dd06924c97ec83335a588a7945874c648ef1f7fcdeaa87cc004e"
+    },
+    {
+      "seed": 10007,
+      "episode_id": "76655850e3fc4225ae059a96a7e24f37",
+      "steps": 428,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 428,
+        "object_position": [
+          0.2250348382629754,
+          0.1113074175137725,
+          0.10389224455926542
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "23b0300ac3c2e00efbebbf2c15b8c98b3d1c6215f71427e6fe913b6d1e601424"
+    },
+    {
+      "seed": 10008,
+      "episode_id": "8453c4c0113d4e38a9106b3af728eab0",
+      "steps": 423,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 423,
+        "object_position": [
+          0.22457238267991322,
+          0.10957568322784379,
+          0.10389224454030196
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "b90fba66754731bdd00d78007bfdfbd598a091aa399655c2c9d30408a69f389c"
+    },
+    {
+      "seed": 10009,
+      "episode_id": "600c84f5b0e545b3ba7672a368de9d6f",
+      "steps": 421,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 421,
+        "object_position": [
+          0.22461428852784493,
+          0.10915366970366036,
+          0.10389224454780376
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "6d23dbce7b8551534f89274c58d40b4c00849c280a5dd0b0c0f3a8b8de4e22ac"
+    },
+    {
+      "seed": 10010,
+      "episode_id": "995a768a348943e9afe93f5690e65883",
+      "steps": 422,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 422,
+        "object_position": [
+          0.2374183345335258,
+          0.08842256111291172,
+          0.09589224455991804
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "a2606d3dc8ab1947ce6b10d083f6475856dface197f469d2555d1927d4f503f2"
+    },
+    {
+      "seed": 10011,
+      "episode_id": "4d78312c44da4a579c1b0aa4ad96b7a0",
+      "steps": 417,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 417,
+        "object_position": [
+          0.22599816438430195,
+          0.10928545318297195,
+          0.10389224456523753
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "1700d10d22a470c7fd249c4de3b31dffd3385ed8fc569c000f4ac90a2792ccd4"
+    },
+    {
+      "seed": 10012,
+      "episode_id": "1d050aa456764af09cb9f5ae4e289952",
+      "steps": 420,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 420,
+        "object_position": [
+          0.2249490632117576,
+          0.11080302451466191,
+          0.1038922445542937
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "92a8e80042f2eae9999e6825c14a6bc36580e2cf5e91357f0f9985d2ef84801b"
+    },
+    {
+      "seed": 10013,
+      "episode_id": "466eb715a63e4b83bc39047f204c130a",
+      "steps": 421,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 421,
+        "object_position": [
+          0.22492474124293782,
+          0.10954057533567851,
+          0.10389224454733328
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "882f0ad4fcf82d21bebf388e441aa1af1ac269869dc01b2de1d5df93fef4a818"
+    },
+    {
+      "seed": 10014,
+      "episode_id": "a3e40f8c6d224525867272ad734b0111",
+      "steps": 420,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 420,
+        "object_position": [
+          0.22495714473452083,
+          0.10905515390715514,
+          0.10389224456246247
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "382da5e3a1d775fbc49fd3980fbb4e75541f06f917dca90f4d423bcc9f216543"
+    },
+    {
+      "seed": 10015,
+      "episode_id": "7cdd82de3bef4ab7961b7b4456dcdc8b",
+      "steps": 424,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 424,
+        "object_position": [
+          0.22466394191947328,
+          0.1104164028350527,
+          0.10389224452825425
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "7c9b180221420c06c5d10f0a65bcad4843edec4df1138ff09b49b375cb86c6f1"
+    },
+    {
+      "seed": 10016,
+      "episode_id": "44dee84b6fa84b1694a71820396ac65b",
+      "steps": 425,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 425,
+        "object_position": [
+          0.223685894173662,
+          0.11008813918055499,
+          0.10389224453886352
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "748cef7b41668203af3c8e6259e513fa6532a4445e944c59861fb280e16ebb9c"
+    },
+    {
+      "seed": 10017,
+      "episode_id": "4c0a7d97671442f79a6b3755b4295a01",
+      "steps": 424,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 424,
+        "object_position": [
+          0.2244105161490352,
+          0.10998438730147679,
+          0.10389224452959264
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "da8764ce35fd9f362d3a72b6a978c089fedf2b1e0d53f62a421c3d078f44be33"
+    },
+    {
+      "seed": 10018,
+      "episode_id": "4b2dcb8297804404a598d4b20f2ae980",
+      "steps": 424,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 424,
+        "object_position": [
+          0.22456819671913814,
+          0.11041761086080099,
+          0.10389224453939239
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "0aeb634c5df12cf9c7e250be6c3dc36845af833cfc23631077ee55367cd072b1"
+    },
+    {
+      "seed": 10019,
+      "episode_id": "2eb0162a794542ea86b4164a19a0fb0e",
+      "steps": 422,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 422,
+        "object_position": [
+          0.2243860178959575,
+          0.10916947903924505,
+          0.1038922445230551
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "e8a28771a1a1069f36d3bd25862b82187dce79244491c59b542ceef242117624"
+    },
+    {
+      "seed": 10020,
+      "episode_id": "62c671bf3caf4395b114acc89b4a79b7",
+      "steps": 418,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 418,
+        "object_position": [
+          0.2259081922276778,
+          0.10941379179257003,
+          0.10389224455777023
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "4bd48e0ad49e647b890ee68f1b9ea6d5f3aa87bad54d57ae7f91e1fde193bc9e"
+    },
+    {
+      "seed": 10021,
+      "episode_id": "48ddeb1a662f40a28f388ce336ee544d",
+      "steps": 424,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 424,
+        "object_position": [
+          0.2238039708090016,
+          0.11076828436170898,
+          0.103892244549807
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "7606f94e2c6330c957f2610ac41ff4c5fa0b2623228f3650c06558eebab0bdd8"
+    },
+    {
+      "seed": 10022,
+      "episode_id": "a835184054e74d0e9e4368f86cb8993e",
+      "steps": 421,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 421,
+        "object_position": [
+          0.22484304862624496,
+          0.10934835633730598,
+          0.10389224454782689
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "48e2632ebe76cbad376985a3c66edf52911800dd71c4df30f71b0cb3cc8d33a5"
+    },
+    {
+      "seed": 10023,
+      "episode_id": "3b39899224a147f29b642a76d2147dfb",
+      "steps": 420,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 420,
+        "object_position": [
+          0.2254816315150163,
+          0.10943879343340879,
+          0.10389224456228907
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "b5893c03d3f10080e6f4e57b8bd241f82373964430fe947072a35732a9c63081"
+    },
+    {
+      "seed": 10024,
+      "episode_id": "731c12f2d5384f0e99af98079a52c61f",
+      "steps": 425,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 425,
+        "object_position": [
+          0.2238018778031645,
+          0.10970879846711118,
+          0.1038922445380703
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "906d1481d5ed529bd8291d310ac37aa7b3c21d84b55cbce0c383eb0946c63d4a"
+    },
+    {
+      "seed": 10025,
+      "episode_id": "01726c4b2842438ab7361a1c102ac217",
+      "steps": 417,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 417,
+        "object_position": [
+          0.22524021986407844,
+          0.10907855648128949,
+          0.10389224456337218
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "ade4e76a3968ca90158849d638f4424d1c16cbe170c0ac002fd3a536037e572e"
+    },
+    {
+      "seed": 10026,
+      "episode_id": "65a5eb2856004a7bb41f8e5bf62fcf63",
+      "steps": 427,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 427,
+        "object_position": [
+          0.22541548982833048,
+          0.11090073815788729,
+          0.10389224456467319
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "b6e3197499d604b0462e02ec44c8b57e47dd49883abf1c0b5527d1798be339ab"
+    },
+    {
+      "seed": 10027,
+      "episode_id": "bff8056359f145968910183b8ca9e8d5",
+      "steps": 423,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 423,
+        "object_position": [
+          0.22596663315615786,
+          0.11106476205158741,
+          0.10389224456443824
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "e03e8f2dffda173bb31c99ab12a7708b030f63f9ea3781096c95a99d9678b272"
+    },
+    {
+      "seed": 10028,
+      "episode_id": "f2aa7fc6e29d4c56908f07e2d88c4922",
+      "steps": 419,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 419,
+        "object_position": [
+          0.22450295063339004,
+          0.10901444849621214,
+          0.10389224454175587
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "490d1230ee68a6db79ca5c33e479ac9807a608cfb034bb887568ca9087dcbc52"
+    },
+    {
+      "seed": 10029,
+      "episode_id": "7cf2e9d8645c4d1fb9c099faddf343c5",
+      "steps": 420,
+      "success": true,
+      "outcome": {
+        "success": true,
+        "failure_reason": null,
+        "lifted": true,
+        "steps": 420,
+        "object_position": [
+          0.22528141325366938,
+          0.10935247580654377,
+          0.10389224456298388
+        ],
+        "object_in_robot_contact": false
+      },
+      "initial_state_sha256": "926f1dae6474debf5dac213f9a43517edd96bc058214db987c67b29becc19514"
+    }
+  ],
+  "successes": 30,
+  "trials": 30,
+  "success_rate": 1.0,
+  "unique_initial_states": 30,
+  "initial_states_disjoint_from_demonstrations": true,
+  "held_out": true,
+  "success_rate_ci95": [
+    0.8864829086095221,
+    1.0
+  ],
+  "interval_note": "Wilson binomial interval; omitted for repeated states or unverified demonstration disjointness. Simulator coverage is not hardware confidence.",
+  "failure_counts": {},
+  "elapsed_seconds": 44.69798920000903,
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0"
+  },
+  "hardware": false,
+  "safety_certification": false,
+  "ledger_id": "8ab93c8e-e880-49c2-a7f6-2229615d92e2"
+}

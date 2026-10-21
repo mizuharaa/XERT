@@ -1,0 +1,21 @@
+{
+  "chunk_size": 50,
+  "selection": "lowest validation MAE only",
+  "sweep": [
+    {
+      "chunk_size": 10,
+      "model_id": "3d56969487a74eb1812b1206f3040243",
+      "validation_mae": 0.013036282192375265
+    },
+    {
+      "chunk_size": 20,
+      "model_id": "b9b096eb00984375b05f554bb51db2ff",
+      "validation_mae": 0.014889729942967915
+    },
+    {
+      "chunk_size": 50,
+      "model_id": "aedce01a71a341c4a0f1f0d7f0ab7a35",
+      "validation_mae": 0.010536832582208902
+    }
+  ]
+}
