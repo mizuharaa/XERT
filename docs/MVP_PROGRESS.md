@@ -18,7 +18,7 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P1.2 | Complete | [Recovery collection](learn/P1.2.md), immutable executed actions and corrective labels |
 | P1.3 | Complete | [ACT experiment](learn/P1.3.md), [ledger-generated held-out results](../results/p1.3/act_v1/report.md) |
 | P1.4 | Pending | Official LeRobot ACT comparison |
-| P2.1 | Pending | LeRobot export and load round trip |
+| P2.1 | Complete | [Lossless LeRobot export](learn/P2.1.md), real reader round trip and ledger-backed dataset |
 | P2.2 | Pending | Direct recording with timestamps and safety events |
 | P3.1 | Complete | [Validated embodiment specifications](learn/P3.1.md) |
 | P3.2 | Complete | [Generalized IK](learn/P3.2.md), reachable-target measurements in the ledger |
@@ -32,8 +32,8 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P5.2 | Pending | Thresholds committed before gated training |
 | P5.3 | Pending | All/gated/random-control experiment and report |
 
-Accepted halfway checkpoint: P0.1–P0.3, P1.1–P1.3 and P3.1–P3.4.
-These are ten of the twenty required simulation slices. This counts accepted
+Accepted slices: P0.1–P0.3, P1.1–P1.3, P2.1 and P3.1–P3.4.
+These are eleven of the twenty required simulation slices. This counts accepted
 slices, not equal engineering effort or a finished end-to-end MVP.
 
 The learned-policy result applies to the existing XLeRobot-arm MuJoCo task.
