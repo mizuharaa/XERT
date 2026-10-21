@@ -54,7 +54,11 @@ def run(args):
                   script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), **provenance)
     config['output'] = str(args.output)
     (args.output / 'config.json').write_text(json.dumps(config, indent=2), encoding='utf-8')
-    dataset = learning.ActionChunks([episode], [0], cfg['chunk_size'], mean, scale)
+    (args.output / 'diagnostic_source.py').write_bytes(Path(__file__).read_bytes())
+    training_episode = {**episode, 'observations': episode['observations'].copy()}
+    if args.time_only:
+        training_episode['observations'][:, :-1] = mean[:-1]
+    dataset = learning.ActionChunks([training_episode], [0], cfg['chunk_size'], mean, scale)
     loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True,
                                         generator=torch.Generator().manual_seed(args.seed))
     model = learning._model(cfg, observations.shape[1], actions.shape[1])
@@ -73,7 +77,16 @@ def run(args):
             print(f'epoch={epoch+1} last_batch_loss={loss.item():.6g}', flush=True)
     metadata = dict(obs_dim=observations.shape[1], observation_mean=mean.tolist(),
                     observation_scale=scale.tolist(), config=cfg)
-    policy = learning.LoadedPolicy(model, metadata)
+    class DiagnosticPolicy(learning.LoadedPolicy):
+        def act(self, observation):
+            observed = np.asarray(observation).copy()
+            if args.freeze_constant:
+                observed[scale <= args.scale_floor] = mean[scale <= args.scale_floor]
+            if args.time_only:
+                observed[:-1] = mean[:-1]
+            return super().act(observed)
+
+    policy = DiagnosticPolicy(model, metadata)
     teacher = np.asarray([policy.act(obs) for obs in observations])
     errors = teacher - actions
     closed, closed_info = rollout(env, args.seed, policy)
@@ -89,6 +102,7 @@ def run(args):
     summary = dict(expert_success=bool(expert_info['success']),
                    closed_loop_success=bool(closed_info['success']),
                    closed_loop_outcome=closed_info, predicted_replay_success=bool(replay_info['success']),
+                   predicted_replay_complete=bool(replay_info['success'] or replay_info['failure_reason']),
                    predicted_replay_outcome=replay_info, action_mae=float(np.abs(errors).mean()),
                    per_joint_mae=np.abs(errors).mean(axis=0).tolist(),
                    max_normalized_closed_observation=float(np.abs(normalized_closed).max()),
@@ -126,6 +140,10 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=100)
     parser.add_argument('--chunk-size', type=int, default=8)
     parser.add_argument('--scale-floor', type=float, default=1e-4)
+    parser.add_argument('--freeze-constant', action='store_true',
+                        help='Controlled probe: ignore features at the training scale floor')
+    parser.add_argument('--time-only', action='store_true',
+                        help='Controlled probe: learn this one trajectory from time only')
     args = parser.parse_args()
     if not np.isfinite(args.scale_floor) or args.scale_floor < 1e-4:
         parser.error('scale floor must be finite and at least 1e-4')

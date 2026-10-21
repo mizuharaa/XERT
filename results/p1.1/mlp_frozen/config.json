@@ -1,0 +1,42 @@
+{
+  "output": "results\\p1.1\\mlp_frozen",
+  "model": "baseline_mlp",
+  "epochs": 500,
+  "seed": 100,
+  "chunk_size": 8,
+  "scale_floor": 0.0001,
+  "freeze_constant": true,
+  "environment": {
+    "friction": 1.0,
+    "delay_steps": 0,
+    "horizon": 600,
+    "object_position_bounds": [
+      [
+        0.225,
+        -0.045
+      ],
+      [
+        0.255,
+        -0.015
+      ]
+    ]
+  },
+  "training": {
+    "model_type": "baseline_mlp",
+    "epochs": 500,
+    "batch_size": 64,
+    "chunk_size": 1,
+    "hidden_dim": 64,
+    "seed": 100,
+    "val_fraction": 0.2,
+    "lr": 0.001,
+    "kl_weight": 0.01,
+    "device": "cpu"
+  },
+  "in_sample": true,
+  "held_out": false,
+  "normalization_floor": 0.0001,
+  "script_sha256": "388b57b64c291fac84a0b583b5936e0d0fd1e6fcf0daae32f04e5e6cc565c1e5",
+  "git_commit": "861f7686504d028476d8a3e3c03cc867081124db",
+  "git_dirty": true
+}

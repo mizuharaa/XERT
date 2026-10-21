@@ -1,0 +1,51 @@
+{
+  "expert_success": true,
+  "closed_loop_success": false,
+  "closed_loop_outcome": {
+    "success": false,
+    "failure_reason": "timeout_no_lift",
+    "lifted": false,
+    "steps": 600,
+    "object_position": [
+      0.25004944891506026,
+      -0.02710337919096338,
+      0.09589224458155855
+    ],
+    "object_in_robot_contact": false
+  },
+  "predicted_replay_success": false,
+  "predicted_replay_outcome": {
+    "success": false,
+    "failure_reason": null,
+    "lifted": true,
+    "steps": 426,
+    "object_position": [
+      0.22945686589078443,
+      0.11033189028701534,
+      0.10389224426236157
+    ],
+    "object_in_robot_contact": false
+  },
+  "action_mae": 0.005064031574875116,
+  "per_joint_mae": [
+    0.001941133290529251,
+    0.0025759453419595957,
+    0.0020270259119570255,
+    0.0033548371866345406,
+    0.002115232404321432,
+    0.0183700080960989
+  ],
+  "max_normalized_closed_observation": 147220.765625,
+  "max_normalized_feature": "joint_velocity.Wrist_Roll_L",
+  "gripper_recorded_values": [
+    -0.875,
+    0.5
+  ],
+  "gripper_mae": 0.018370015546679497,
+  "time_feature": "step / configured horizon; identical horizon in all diagnostic rollouts",
+  "training_frames": 426,
+  "closed_loop_frames": 600,
+  "in_sample": true,
+  "held_out": false,
+  "hardware": false
+}
