@@ -13,7 +13,8 @@ def run(config_path, output):
     if type(config.get('action_noise_std')) not in (int, float) or not 0 < config['action_noise_std'] <= .05:
         raise ValueError('Recovery collection requires positive noise up to .05')
     seeds = list(range(config['seed_start'], config['seed_start'] + config['episodes']))
-    held_out = {s for lo, hi in config['held_out_seed_ranges'] for s in range(lo, hi + 1)}
+    held_out = set(range(16)) | set(range(10000, 10030))
+    held_out.update(s for lo, hi in config['held_out_seed_ranges'] for s in range(lo, hi + 1))
     if not 100 <= len(seeds) <= 200 or set(seeds) & held_out:
         raise ValueError('Collect 100..200 demonstrations disjoint from the declared held-out seeds')
     provenance = ledger.source_provenance()

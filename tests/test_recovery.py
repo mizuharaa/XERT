@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from xle_workbench import pipeline
+from xle_workbench import storage
 from xle_workbench.sim import ManipulationEnv
 from xle_workbench.storage import Store, atomic_json, sha256
 
@@ -55,3 +56,24 @@ def test_recovery_noise_validation(tmp_path):
     for value in (-.01, .051, float('nan'), True):
         with pytest.raises(ValueError, match='action_noise_std'):
             pipeline.collect(Store(tmp_path), [100], action_noise_std=value)
+
+
+@pytest.mark.parametrize('filename', ['episode.npz', 'corrective.npz'])
+def test_archive_hash_and_decode_use_same_snapshot(tmp_path, monkeypatch, filename):
+    store = Store(tmp_path)
+    identifier = pipeline.collect(store, [100], {'horizon': 2}, action_noise_std=.005)['episode_ids'][0]
+    path = store.path('episodes', identifier) / filename
+    original = storage.decode_npz(path.read_bytes())
+    forged = {**original, 'actions': np.full_like(original['actions'], .75)}
+    real_hash = storage.sha256
+
+    def replace_after_hash(candidate):
+        digest = real_hash(candidate)
+        if candidate == path:
+            np.savez_compressed(path, **forged)
+        return digest
+
+    monkeypatch.setattr(storage, 'sha256', replace_after_hash)
+    loaded, _ = (store.load_episode(identifier) if filename == 'episode.npz'
+                 else store.load_training_episode(identifier))
+    np.testing.assert_array_equal(loaded['actions'], original['actions'])

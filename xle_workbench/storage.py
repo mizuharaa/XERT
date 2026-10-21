@@ -133,6 +133,20 @@ def decode_npz(raw: bytes) -> dict:
         raise ValueError("Invalid NPZ episode archive") from exc
 
 
+def _load_archive(path: Path, expected_hash: str) -> dict:
+    # Hash and decode the same bounded bytes, even if another writer replaces the path.
+    try:
+        with path.open('rb') as stream:
+            raw = stream.read(MAX_ARCHIVE_BYTES + 1)
+    except OSError as exc:
+        raise ValueError('Episode payload is unavailable') from exc
+    if len(raw) > MAX_ARCHIVE_BYTES:
+        raise ValueError('Episode archive exceeds 32 MiB')
+    if hashlib.sha256(raw).hexdigest() != expected_hash:
+        raise ValueError('Episode checksum mismatch')
+    return decode_npz(raw)
+
+
 class Store:
     def __init__(self, root: Path | str):
         self.root = Path(root).resolve()
@@ -195,9 +209,7 @@ class Store:
     def load_episode(self, identifier: str) -> tuple[dict, dict]:
         metadata = self.read("episodes", identifier)
         path = self.path("episodes", identifier) / "episode.npz"
-        if sha256(path) != metadata.get("sha256"):
-            raise ValueError("Episode checksum mismatch")
-        arrays = decode_npz(path.read_bytes())
+        arrays = _load_archive(path, metadata.get('sha256'))
         if arrays["observations"].shape[1] != metadata["observation_dim"]:
             raise ValueError("Observation dimension differs from manifest")
         if arrays["actions"].shape[1] != metadata["action_dim"] or len(arrays["actions"]) != metadata["steps"]:
@@ -212,11 +224,12 @@ class Store:
                 raise ValueError('Corrective label provenance is inconsistent')
             return arrays, metadata
         path = self.path('episodes', identifier) / 'corrective.npz'
-        if (metadata.get('training_action_source') != 'expert_correction'
-                or not path.is_file() or path.stat().st_size > MAX_ARCHIVE_BYTES
-                or sha256(path) != metadata.get('corrective_sha256')):
+        if metadata.get('training_action_source') != 'expert_correction':
             raise ValueError('Missing, oversized, or corrupt corrective labels')
-        labels = decode_npz(path.read_bytes())
+        try:
+            labels = _load_archive(path, metadata.get('corrective_sha256'))
+        except ValueError as exc:
+            raise ValueError('Missing, oversized, or corrupt corrective labels') from exc
         if (labels['actions'].shape != arrays['actions'].shape
                 or any(not np.array_equal(labels[key], arrays[key])
                        for key in ('observations', 'rewards', 'terminated'))):
