@@ -1,0 +1,167 @@
+{
+    "codebase_version": "v3.0",
+    "fps": 25,
+    "features": {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                26
+            ],
+            "names": [
+                "joint_position.Rotation_L",
+                "joint_position.Pitch_L",
+                "joint_position.Elbow_L",
+                "joint_position.Wrist_Pitch_L",
+                "joint_position.Wrist_Roll_L",
+                "joint_position.Jaw_L",
+                "joint_velocity.Rotation_L",
+                "joint_velocity.Pitch_L",
+                "joint_velocity.Elbow_L",
+                "joint_velocity.Wrist_Pitch_L",
+                "joint_velocity.Wrist_Roll_L",
+                "joint_velocity.Jaw_L",
+                "block.x",
+                "block.y",
+                "block.z",
+                "block.qw",
+                "block.qx",
+                "block.qy",
+                "block.qz",
+                "grasp.x",
+                "grasp.y",
+                "grasp.z",
+                "tray.x",
+                "tray.y",
+                "tray.z",
+                "time_fraction"
+            ]
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                6
+            ],
+            "names": [
+                "Rotation_L",
+                "Pitch_L",
+                "Elbow_L",
+                "Wrist_Pitch_L",
+                "Wrist_Roll_L",
+                "Jaw_L"
+            ]
+        },
+        "xert.executed_action": {
+            "dtype": "float32",
+            "shape": [
+                6
+            ],
+            "names": [
+                "Rotation_L",
+                "Pitch_L",
+                "Elbow_L",
+                "Wrist_Pitch_L",
+                "Wrist_Roll_L",
+                "Jaw_L"
+            ]
+        },
+        "xert.next_observation": {
+            "dtype": "float32",
+            "shape": [
+                26
+            ],
+            "names": [
+                "joint_position.Rotation_L",
+                "joint_position.Pitch_L",
+                "joint_position.Elbow_L",
+                "joint_position.Wrist_Pitch_L",
+                "joint_position.Wrist_Roll_L",
+                "joint_position.Jaw_L",
+                "joint_velocity.Rotation_L",
+                "joint_velocity.Pitch_L",
+                "joint_velocity.Elbow_L",
+                "joint_velocity.Wrist_Pitch_L",
+                "joint_velocity.Wrist_Roll_L",
+                "joint_velocity.Jaw_L",
+                "block.x",
+                "block.y",
+                "block.z",
+                "block.qw",
+                "block.qx",
+                "block.qy",
+                "block.qz",
+                "grasp.x",
+                "grasp.y",
+                "grasp.z",
+                "tray.x",
+                "tray.y",
+                "tray.z",
+                "time_fraction"
+            ]
+        },
+        "next.reward": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": [
+                "reward"
+            ]
+        },
+        "next.done": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "terminated"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    },
+    "total_episodes": 100,
+    "total_frames": 44480,
+    "total_tasks": 1,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": null,
+    "robot_type": "xlerobot_left",
+    "splits": {
+        "train": "0:100"
+    }
+}
