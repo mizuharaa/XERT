@@ -3,8 +3,97 @@
 #include <cmath>
 #include <stdexcept>
 #include <vector>
+#include <memory>
+#include <set>
 
 namespace reach {
+std::vector<double> solve_ik(const mjModel* model, const mjData* state,
+    const std::vector<int>& joints, const std::vector<SiteTarget>& targets,
+    const std::vector<std::array<double, 2>>& limits, int iterations, double damping) {
+    const int n = static_cast<int>(joints.size());
+    if (!n || limits.size() != joints.size() || targets.empty() || iterations < 1 ||
+            iterations > 10000 || !std::isfinite(damping) || damping <= 0 ||
+            std::set<int>(joints.begin(), joints.end()).size() != joints.size())
+        throw std::invalid_argument("Invalid IK dimensions, iterations or damping");
+    for (int i = 0; i < n; ++i) {
+        int j = joints[i];
+        if (j < 0 || j >= model->njnt || (model->jnt_type[j] != mjJNT_HINGE && model->jnt_type[j] != mjJNT_SLIDE) ||
+                !std::isfinite(limits[i][0]) || !std::isfinite(limits[i][1]) || limits[i][0] >= limits[i][1])
+            throw std::invalid_argument("IK needs valid scalar joints and finite ordered limits");
+        if (model->jnt_limited[j] && (limits[i][0] < model->jnt_range[2*j] - 1e-8 ||
+                limits[i][1] > model->jnt_range[2*j+1] + 1e-8))
+            throw std::invalid_argument("IK limits exceed model limits");
+    }
+    for (const auto& target : targets) {
+        if (target.site < 0 || target.site >= model->nsite || !std::isfinite(target.weight) || target.weight <= 0 ||
+                (!target.quaternion.empty() && target.quaternion.size() != 4))
+            throw std::invalid_argument("Invalid IK site, weight or quaternion");
+        for (double v : target.position) if (!std::isfinite(v)) throw std::invalid_argument("Nonfinite IK target");
+        double norm = 0;
+        for (double v : target.quaternion) { if (!std::isfinite(v)) throw std::invalid_argument("Nonfinite quaternion"); norm += v*v; }
+        if (!target.quaternion.empty() && std::abs(norm - 1.0) > 1e-6)
+            throw std::invalid_argument("Quaternion must have unit length");
+    }
+    std::unique_ptr<mjData, decltype(&mj_deleteData)> data(mj_makeData(model), mj_deleteData);
+    if (!data) throw std::runtime_error("Cannot allocate IK state");
+    for (int i = 0; i < model->nq; ++i) {
+        if (!std::isfinite(state->qpos[i])) throw std::invalid_argument("Nonfinite IK state");
+        data->qpos[i] = state->qpos[i];
+    }
+    std::vector<double> jp(3*model->nv), jr(3*model->nv), system(n*n), rhs(n), row(n), delta(n);
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        mj_kinematics(model, data.get()); mj_comPos(model, data.get());
+        std::fill(system.begin(), system.end(), 0); std::fill(rhs.begin(), rhs.end(), 0);
+        for (int c = 0; c < n; ++c) system[c*n+c] = damping*damping;
+        for (const auto& target : targets) {
+            mj_jacSite(model, data.get(), jp.data(), jr.data(), target.site);
+            double error[6]{};
+            for (int r = 0; r < 3; ++r) error[r] = target.position[r] - data->site_xpos[3*target.site+r];
+            if (!target.quaternion.empty()) {
+                double current[4], inverse[4], relative[4];
+                mju_mat2Quat(current, data->site_xmat + 9*target.site);
+                mju_negQuat(inverse, current);
+                mju_mulQuat(relative, target.quaternion.data(), inverse);
+                mju_quat2Vel(error+3, relative, 1.0);
+            }
+            for (int r = 0; r < (target.quaternion.empty() ? 3 : 6); ++r) {
+                for (int c = 0; c < n; ++c)
+                    row[c] = (r < 3 ? jp[r*model->nv+model->jnt_dofadr[joints[c]]] : jr[(r-3)*model->nv+model->jnt_dofadr[joints[c]]]);
+                for (int a = 0; a < n; ++a) {
+                    rhs[a] += target.weight * row[a] * error[r];
+                    for (int b = 0; b < n; ++b) system[a*n+b] += target.weight * row[a] * row[b];
+                }
+            }
+        }
+        // Positive damping makes this normal system positive definite; partial pivoting handles scale.
+        for (int k = 0; k < n; ++k) {
+            int pivot = k;
+            for (int i = k+1; i < n; ++i) if (std::abs(system[i*n+k]) > std::abs(system[pivot*n+k])) pivot = i;
+            if (!std::isfinite(system[pivot*n+k]) || system[pivot*n+k] == 0) throw std::runtime_error("Singular IK system");
+            for (int j = k; j < n; ++j) std::swap(system[k*n+j], system[pivot*n+j]);
+            std::swap(rhs[k], rhs[pivot]);
+            for (int i = k+1; i < n; ++i) {
+                double factor = system[i*n+k]/system[k*n+k];
+                for (int j = k+1; j < n; ++j) system[i*n+j] -= factor * system[k*n+j];
+                rhs[i] -= factor * rhs[k];
+            }
+        }
+        for (int i = n-1; i >= 0; --i) {
+            double residual = rhs[i];
+            for (int j = i+1; j < n; ++j) residual -= system[i*n+j] * delta[j];
+            delta[i] = residual/system[i*n+i];
+            if (!std::isfinite(delta[i])) throw std::runtime_error("Nonfinite IK update");
+        }
+        for (int c = 0; c < n; ++c) {
+            auto& q = data->qpos[model->jnt_qposadr[joints[c]]];
+            q = std::clamp(q + std::clamp(delta[c], -.15, .15), limits[c][0], limits[c][1]);
+        }
+    }
+    std::vector<double> result(n);
+    for (int c = 0; c < n; ++c) result[c] = data->qpos[model->jnt_qposadr[joints[c]]];
+    return result;
+}
+
 namespace {
 // Six equations only; partial pivoting avoids a matrix dependency.
 std::array<double, 6> solve(double (&a)[6][6], std::array<double, 6> b) {
