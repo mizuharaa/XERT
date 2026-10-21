@@ -1,8 +1,8 @@
 # Official ACT reference review
 
-Implementation `0c26610` is accepted for the predeclared P1.4 experiment.
-Measurement acceptance is pending completed training, held-out evaluations and
-artifact verification. This review does not assert a policy success rate.
+Implementation `0c26610` and completed evidence commit `3988e41` for the
+predeclared P1.4 experiment are accepted. Results below describe MuJoCo simulation with scripted recovery
+demonstrations and privileged simulator state.
 
 ## Review boundary
 
@@ -50,7 +50,28 @@ predictions determine validation error; execution clips commands after ensemblin
 The models also differ in architecture and ensemble weighting, so this comparison
 cannot isolate the cause of a performance difference or establish convergence.
 
-Final evidence review must verify model/source/artifact hashes, training-only
-statistics, raw rollout outcomes and initial-state identity, per-model Wilson
-intervals, and the ledger-generated comparison. Shared evaluation states must not
-be pooled as independent extra trials. All results remain simulation-only.
+## Completed measurement review
+
+Codex independently verified every success-row artifact hash, all raw rollout
+arrays and outcomes, matching initial-state hashes, original per-seed training
+splits and normalization, and checkpoint selection by minimum validation error.
+Representative saved-action trajectories exactly reproduced every state, reward,
+termination flag and outcome, including a failed rollout. This bounded replay
+checks saved evidence; it is not an additional policy-performance measurement.
+
+| Training seed | Official ACT successes / trials | Ledger row |
+|---|---|---|
+| 0 | 30 / 30 | `15103d29-afdb-4853-8e63-717e448723ba` |
+| 1 | 18 / 30 | `93e321d8-0b9c-49d0-9692-b6ecb8af6909` |
+| 2 | 30 / 30 | `18dee197-8c4f-43ae-8324-0a1b996e2dbf` |
+
+Independent Wilson calculations match each row. The ledger-generated
+`results/p1.4/official_act_v1/comparison.md` matches both official and earlier
+XERT rows, including the weaker middle-seed result. Failed trials remain in the
+dataset; the frozen plan was not retuned after evaluation. Source, configuration
+and dependency declarations remain unchanged from the clean source commit, and
+the previous ledger bytes remain an exact prefix.
+
+The experiment completion flag is true. Shared evaluation states must not be
+pooled as independent extra trials. The comparison does not show a general model
+ranking, training convergence, quality-gate benefit, or hardware performance.
