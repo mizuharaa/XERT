@@ -1,0 +1,41 @@
+{
+  "output": "results\\p1.1\\mlp_floor01",
+  "model": "baseline_mlp",
+  "epochs": 500,
+  "seed": 100,
+  "chunk_size": 8,
+  "scale_floor": 0.01,
+  "environment": {
+    "friction": 1.0,
+    "delay_steps": 0,
+    "horizon": 600,
+    "object_position_bounds": [
+      [
+        0.225,
+        -0.045
+      ],
+      [
+        0.255,
+        -0.015
+      ]
+    ]
+  },
+  "training": {
+    "model_type": "baseline_mlp",
+    "epochs": 500,
+    "batch_size": 64,
+    "chunk_size": 1,
+    "hidden_dim": 64,
+    "seed": 100,
+    "val_fraction": 0.2,
+    "lr": 0.001,
+    "kl_weight": 0.01,
+    "device": "cpu"
+  },
+  "in_sample": true,
+  "held_out": false,
+  "normalization_floor": 0.01,
+  "script_sha256": "d844e2ecfc8f0feff58a1713a9c73a43f45a8cdb7e65a724c630a7b1ec14010d",
+  "git_commit": "861f7686504d028476d8a3e3c03cc867081124db",
+  "git_dirty": true
+}

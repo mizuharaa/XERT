@@ -1,0 +1,8 @@
+{
+  "seed_start": 100,
+  "episodes": 100,
+  "action_noise_std": 0.005,
+  "environment": {},
+  "held_out_seed_ranges": [[0, 15], [10000, 10029]],
+  "notes": "Scripted MuJoCo demonstrations only; Gaussian normalized arm-target perturbations, unperturbed gripper, expert corrective labels computed before each perturbation. No filtering by success."
+}

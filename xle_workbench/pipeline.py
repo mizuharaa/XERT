@@ -56,22 +56,47 @@ def rollout(env, seed: int, policy=None, cancelled=None) -> tuple[dict, dict]:
     return arrays, info
 
 
+class _NoisyExpert:
+    def __init__(self, env, seed, std):
+        self.env, self.seed, self.std = env, seed, std
+        self.labels = []
+
+    def reset(self):
+        self.labels.clear()
+        self.rng = np.random.default_rng(self.seed)
+
+    def act(self, observation):
+        label = np.asarray(self.env.expert_action(), dtype=np.float32)
+        self.labels.append(label.copy())
+        executed = label.copy()
+        executed[:-1] += self.rng.normal(0, self.std, len(executed) - 1)
+        return np.clip(executed, -1, 1)
+
+
 def collect(store: Store, seeds: list[int], config: dict | None = None,
-            progress=None, cancelled=None) -> dict:
+            progress=None, cancelled=None, *, action_noise_std: float = 0.0) -> dict:
     from .sim import ManipulationEnv
     if not seeds or len(seeds) > 100 or len(set(seeds)) != len(seeds):
         raise ValueError("Choose 1..100 unique collection seeds")
+    if (type(action_noise_std) not in (float, int) or not math.isfinite(action_noise_std)
+            or not 0 <= action_noise_std <= .05):
+        raise ValueError('action_noise_std must be finite and in [0, .05]')
     records = []
     env = ManipulationEnv(config)
     try:
         for index, seed in enumerate(seeds):
-            arrays, outcome = rollout(env, seed, cancelled=cancelled)
+            policy = _NoisyExpert(env, seed, action_noise_std) if action_noise_std else None
+            arrays, outcome = rollout(env, seed, policy, cancelled=cancelled)
             record = store.save_episode(arrays, {
-                "source": "scripted_simulation", "seed": seed, "config": env.config,
+                "source": "scripted_simulation_noise" if policy else "scripted_simulation",
+                "seed": seed, "config": env.config,
+                "action_noise": {"std": action_noise_std, "seed": seed,
+                                 "distribution": "gaussian_normalized_arm_targets",
+                                 "gripper_perturbed": False, "clip": [-1, 1]},
                 "simulation": env.metadata(), "contract_sha256": contract(env.metadata()),
                 "success": bool(outcome.get("success", False)), "outcome": outcome,
                 "hardware": False,
-            })
+            }, corrective_actions=np.asarray(policy.labels) if policy else None)
             records.append(record)
             if progress:
                 progress({"completed": index + 1, "total": len(seeds),
@@ -80,7 +105,8 @@ def collect(store: Store, seeds: list[int], config: dict | None = None,
         env.close()
     return {"episode_ids": [item["id"] for item in records], "episodes": len(records),
             "successes": sum(item["success"] for item in records),
-            "source": "scripted_simulation", "hardware": False}
+            "source": "scripted_simulation_noise" if action_noise_std else "scripted_simulation",
+            "action_noise_std": action_noise_std, "hardware": False}
 
 
 def train_model(store: Store, episode_ids: list[str], config: dict | None = None,
@@ -91,7 +117,7 @@ def train_model(store: Store, episode_ids: list[str], config: dict | None = None
     arrays, records = [], []
     for identifier in episode_ids:
         check_cancel(cancelled)
-        data, metadata = store.load_episode(identifier)
+        data, metadata = store.load_training_episode(identifier)
         arrays.append(data)
         records.append(metadata)
         if metadata.get("contract_sha256") != contract(metadata.get("simulation", {})):
@@ -115,6 +141,8 @@ def train_model(store: Store, episode_ids: list[str], config: dict | None = None
         proof = {"id": identifier, "state": "completed", "contract_sha256": signatures.pop(),
                  "simulation": simulation, "episode_ids": episode_ids,
                  "episode_sha256": [record["sha256"] for record in records],
+                 "training_payload_sha256": [record.get('corrective_sha256', record['sha256']) for record in records],
+                 "training_action_sources": [record.get('training_action_source', 'executed') for record in records],
                  "training_source_seeds": [record.get("seed") for record in records],
                  "demonstration_initial_states": [initial_state_hash(data["observations"][0]) for data in arrays],
                  "dataset_successes": sum(bool(record.get("success")) for record in records),

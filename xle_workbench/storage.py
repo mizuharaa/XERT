@@ -133,6 +133,20 @@ def decode_npz(raw: bytes) -> dict:
         raise ValueError("Invalid NPZ episode archive") from exc
 
 
+def _load_archive(path: Path, expected_hash: str) -> dict:
+    # Hash and decode the same bounded bytes, even if another writer replaces the path.
+    try:
+        with path.open('rb') as stream:
+            raw = stream.read(MAX_ARCHIVE_BYTES + 1)
+    except OSError as exc:
+        raise ValueError('Episode payload is unavailable') from exc
+    if len(raw) > MAX_ARCHIVE_BYTES:
+        raise ValueError('Episode archive exceeds 32 MiB')
+    if hashlib.sha256(raw).hexdigest() != expected_hash:
+        raise ValueError('Episode checksum mismatch')
+    return decode_npz(raw)
+
+
 class Store:
     def __init__(self, root: Path | str):
         self.root = Path(root).resolve()
@@ -166,8 +180,17 @@ class Store:
                 results.append({"id": path.parent.name, "state": "corrupt", "error": str(exc)})
         return results
 
-    def save_episode(self, arrays: dict, metadata: dict) -> dict:
+    def save_episode(self, arrays: dict, metadata: dict, *, corrective_actions=None) -> dict:
         arrays = validate_arrays(arrays)
+        corrective = None
+        if corrective_actions is not None:
+            if metadata.get('source') != 'scripted_simulation_noise':
+                raise ValueError('Corrective labels require noisy scripted simulation provenance')
+            corrective = validate_arrays({**arrays, 'actions': corrective_actions})
+            if corrective['actions'].shape != arrays['actions'].shape:
+                raise ValueError('Corrective action dimensions differ from executed actions')
+        elif metadata.get('source') == 'scripted_simulation_noise':
+            raise ValueError('Noisy scripted simulation requires corrective labels')
         identifier, path = self.create("episodes")
         np.savez_compressed(path / "episode.npz", **arrays)
         result = {**metadata, "id": identifier, "schema_version": SCHEMA_VERSION,
@@ -175,17 +198,40 @@ class Store:
                   "observation_dim": arrays["observations"].shape[1],
                   "action_dim": arrays["actions"].shape[1],
                   "sha256": sha256(path / "episode.npz")}
+        if corrective is not None:
+            # Reuse the bounded NPZ decoder; duplicated states make alignment checkable.
+            np.savez_compressed(path / 'corrective.npz', **corrective)
+            result.update(training_action_source='expert_correction',
+                          corrective_sha256=sha256(path / 'corrective.npz'))
         atomic_json(path / "metadata.json", result)
         return result
 
     def load_episode(self, identifier: str) -> tuple[dict, dict]:
         metadata = self.read("episodes", identifier)
         path = self.path("episodes", identifier) / "episode.npz"
-        if sha256(path) != metadata.get("sha256"):
-            raise ValueError("Episode checksum mismatch")
-        arrays = decode_npz(path.read_bytes())
+        arrays = _load_archive(path, metadata.get('sha256'))
         if arrays["observations"].shape[1] != metadata["observation_dim"]:
             raise ValueError("Observation dimension differs from manifest")
         if arrays["actions"].shape[1] != metadata["action_dim"] or len(arrays["actions"]) != metadata["steps"]:
             raise ValueError("Action dimensions or episode length differ from manifest")
         return arrays, metadata
+
+    def load_training_episode(self, identifier: str) -> tuple[dict, dict]:
+        arrays, metadata = self.load_episode(identifier)
+        corrective = metadata.get('source') == 'scripted_simulation_noise'
+        if not corrective:
+            if 'corrective_sha256' in metadata or 'training_action_source' in metadata:
+                raise ValueError('Corrective label provenance is inconsistent')
+            return arrays, metadata
+        path = self.path('episodes', identifier) / 'corrective.npz'
+        if metadata.get('training_action_source') != 'expert_correction':
+            raise ValueError('Missing, oversized, or corrupt corrective labels')
+        try:
+            labels = _load_archive(path, metadata.get('corrective_sha256'))
+        except ValueError as exc:
+            raise ValueError('Missing, oversized, or corrupt corrective labels') from exc
+        if (labels['actions'].shape != arrays['actions'].shape
+                or any(not np.array_equal(labels[key], arrays[key])
+                       for key in ('observations', 'rewards', 'terminated'))):
+            raise ValueError('Corrective labels are not aligned with recorded transitions')
+        return labels, metadata
