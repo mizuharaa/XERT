@@ -11,6 +11,7 @@ or recorded evidence; a successful simulation check is not a hardware result.
 | P1.1 | [Learning diagnosis](P1.1.md) | Why can a small action-prediction error still produce a failed rollout? |
 | P1.2 | [Recovery demonstrations](P1.2.md) | Why must executed noisy actions and corrective training labels be stored separately? |
 | P1.3 | [ACT experiment](P1.3.md) | How do overlapping action predictions line up at the current control step? |
+| P1.4 | [Official ACT comparison (in progress)](P1.4.md) | Which differences prevent attributing a result to the architecture alone? |
 | P2.1 | [Lossless LeRobot export](P2.1.md) | Why keep the terminal observation and both executed and corrective actions? |
 | P3.1 | [Embodiment specifications](P3.1.md) | Why must a requested position fit both joint and actuator limits? |
 | P3.2 | [Generalized inverse kinematics](P3.2.md) | What does damping do when a robot cannot easily move in the requested direction? |

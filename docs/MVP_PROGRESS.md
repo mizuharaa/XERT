@@ -17,7 +17,7 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P1.1 | Complete | [Diagnosis](learn/P1.1.md), saved predictions and joint-error plots |
 | P1.2 | Complete | [Recovery collection](learn/P1.2.md), immutable executed actions and corrective labels |
 | P1.3 | Complete | [ACT experiment](learn/P1.3.md), [ledger-generated held-out results](../results/p1.3/act_v1/report.md) |
-| P1.4 | Pending | Official LeRobot ACT comparison |
+| P1.4 | In progress | [Reviewed official ACT runner](learn/P1.4.md); fixed-protocol measurements underway |
 | P2.1 | Complete | [Lossless LeRobot export](learn/P2.1.md), real reader round trip and ledger-backed dataset |
 | P2.2 | Pending | Direct recording with timestamps and safety events |
 | P3.1 | Complete | [Validated embodiment specifications](learn/P3.1.md) |

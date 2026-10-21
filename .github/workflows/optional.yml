@@ -16,26 +16,32 @@ jobs:
       HF_HUB_OFFLINE: '1'
       HF_DATASETS_OFFLINE: '1'
       HF_HUB_DISABLE_TELEMETRY: '1'
+      MUJOCO_GL: osmesa
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: pip
-          cache-dependency-path: requirements-lerobot-linux-lock.txt
+          cache-dependency-path: requirements-act-linux-lock.txt
       - name: Install codec runtime
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ffmpeg
+          sudo apt-get install --no-install-recommends -y ffmpeg libosmesa6
       - name: Install isolated dataset dependencies
         run: |
           python -m venv .venv-lerobot
-          .venv-lerobot/bin/python -m pip install -r requirements-lerobot-linux-lock.txt
+          .venv-lerobot/bin/python -m pip install -r requirements-act-linux-lock.txt
           .venv-lerobot/bin/python -m pip check
-      - name: Require the real LeRobot reader and run round trips
+      - name: Build native core for the isolated Python
         run: |
-          .venv-lerobot/bin/python -c "from importlib.metadata import version; from lerobot.datasets.lerobot_dataset import LeRobotDataset; assert version('lerobot') == '0.6.1'"
-          .venv-lerobot/bin/python -m pytest -q tests/test_lerobot_export.py
+          cmake -S . -B build-lerobot -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE="$PWD/.venv-lerobot/bin/python"
+          cmake --build build-lerobot --parallel 2
+          ctest --test-dir build-lerobot -C Release --output-on-failure
+      - name: Require the real LeRobot reader and ACT policy
+        run: |
+          .venv-lerobot/bin/python -c "from importlib.metadata import version; from lerobot.datasets.lerobot_dataset import LeRobotDataset; from lerobot.policies.act.modeling_act import ACTPolicy; assert version('lerobot') == '0.6.1'"
+          .venv-lerobot/bin/python -m pytest -q tests/test_lerobot_export.py tests/test_lerobot_act.py
   webcam:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
