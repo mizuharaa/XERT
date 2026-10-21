@@ -67,9 +67,10 @@ def test_real_pipeline_replay_train_evaluate(tmp_path):
     # A tiny horizon validates wiring, explicitly not pick-place competence.
     model = pipeline.train_model(store, collection["episode_ids"],
                                  {"epochs": 1, "hidden_dim": 16, "batch_size": 16, "seed": 7})
-    result = pipeline.evaluate(store, [100], {"horizon": 12}, model["id"])
+    result = pipeline.evaluate(store, [100], {"horizon": 12}, model["id"], slice_id='P1.3')
     assert result["trials"] == 1 and result["hardware"] is False
     row = read_rows()[0]
+    assert row['slice'] == 'P1.3'
     assert row["seeds"] == {"train": [7], "eval": [100]}
     assert row["demonstration_seeds"] == [11, 12, 13, 14]
     assert row["ci95"] == result["success_rate_ci95"]

@@ -20,7 +20,8 @@ The code here was written independently using PyTorch's standard Transformer
 layers. ACT's core pattern conditions an action-sequence generator on state and
 a training-time latent inferred from demonstrations. We retain that pattern.
 We omit image features, use a smaller network and latent, bound outputs with
-tanh, and execute non-overlapping chunks without temporal ensembling.
+tanh, and default to non-overlapping chunks. Optional temporal ensembling
+queries the model every tick and averages predictions for that exact tick.
 
 State inputs can include simulator-only object measurements. A working policy
 therefore does **not** establish visual perception or sim-to-real performance.
@@ -166,6 +167,13 @@ returns queued actions one per simulator control tick. That is **open-loop withi
 each chunk**, even though callers provide a fresh observation each tick. Call
 `policy.reset()` at every episode boundary. No hidden phase estimator, scripted
 expert fallback, or target actions are used during inference.
+
+With `temporal_ensemble=true` for ACT, the policy instead predicts a fresh chunk
+on every observation. Each active chunk contributes its action for the current
+tick, weighted by `exp(-ensemble_decay * age_in_ticks)`. This implementation
+favors newer predictions; zero decay gives equal weights. Reset clears every
+active chunk, so predictions cannot cross episode boundaries. Old checkpoints
+and the default configuration retain their original non-overlapping execution.
 
 Seeded episode splits, initialization, shuffling, and latent sampling make CPU
 runs repeatable in the same software environment when jobs are serialized.
