@@ -1,5 +1,7 @@
 """Scripted landmarks exercise software contracts; these are not human demonstrations."""
 from dataclasses import replace
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -148,3 +150,43 @@ def test_estop_callback_latches_hold():
                        clock=clock, sleep=clock.sleep, stop_requested=lambda: True)
     assert len(records) == 1
     assert records[0]["phase"] == "estop" and not records[0]["latency_sample"]
+
+
+def test_latency_snapshots_same_calibration_bytes_that_mapper_received(tmp_path, monkeypatch):
+    from xert.eval import ledger
+    from xert.retarget import calibrate
+    from xert.runtime import cli, loop
+    from xert.sources import webcam_mediapipe
+    spec_path = ROOT / "xert/spec/so101.yaml"
+    profile = ROOT / "configs/teleop/so101.json"
+    model_path = tmp_path / "model.task"
+    model_path.write_bytes(b"mock")
+    model_hash = hashlib.sha256(b"mock").hexdigest()
+    manifest = tmp_path / "assets/mediapipe/SOURCE.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"sha256": model_hash}))
+    backend = MuJoCoBackend(load_spec(spec_path))
+    neutral = create_calibration(spec_path, profile, frame(), backend)
+    backend.close()
+    neutral.update(source="webcam", camera=0, model_sha256=model_hash, mirrored=False)
+    calibration_path = tmp_path / "neutral.json"
+    original = json.dumps(neutral, indent=3).encode()
+    calibration_path.write_bytes(original)
+    def mapper(spec, profile, calibration, backend):
+        assert calibration == neutral
+        calibration_path.write_bytes(b"changed after the single read")
+        return None
+    monkeypatch.setattr(calibrate, "CalibratedMapper", mapper)
+    monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: Source([]))
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(ledger, "artifact_path", lambda p: str(p))
+    monkeypatch.setattr(ledger, "source_provenance", lambda: {})
+    monkeypatch.setattr(loop, "run_loop", lambda *a, **k: [])
+    args = SimpleNamespace(command="latency", spec=spec_path, profile=profile, model=model_path,
+                           camera=0, calibration=calibration_path, output=tmp_path / "run", duration=.04)
+    with pytest.raises(RuntimeError, match="stopped early"):
+        cli.execute(args)
+    config = json.loads((args.output / "config.json").read_text())
+    assert (args.output / "calibration.json").read_bytes() == original
+    assert config["calibration_sha256"] == hashlib.sha256(original).hexdigest()
+    assert Path(config["calibration"]).read_bytes() == original

@@ -71,7 +71,8 @@ def execute(args):
                 raise RuntimeError("No fresh complete neutral hand pose observed before timeout")
             finally:
                 source.close()
-        calibration = json.loads(args.calibration.read_text())
+        calibration_bytes = args.calibration.read_bytes()
+        calibration = json.loads(calibration_bytes)
         if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
                 calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
             raise ValueError("Live run requires a matching, unmirrored webcam calibration")
@@ -80,11 +81,15 @@ def execute(args):
         config = {"embodiment": spec.name, "joint_names": list(spec.joint_names), "backend": "mujoco",
                   "source": "webcam", "camera": args.camera, "mirrored": False,
                   "spec": artifact_path(args.spec), "profile": artifact_path(args.profile),
-                  "calibration": artifact_path(args.calibration), "duration_s": args.duration,
+                  "calibration": artifact_path(args.output / "calibration.json"),
+                  "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
+                  "duration_s": args.duration,
                   "model": model, "control_hz": spec.control_hz,
                   "latency_endpoint": "host acquisition return to MuJoCo step completion; excludes sensor/driver buffering",
                   **provenance}
         args.output.mkdir(parents=True)
+        with (args.output / "calibration.json").open("xb") as snapshot:
+            snapshot.write(calibration_bytes)
         config_path, trace_path = args.output / "config.json", args.output / "trace.jsonl"
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
         source = WebcamSource(args.model, model["sha256"], camera=args.camera)
@@ -108,7 +113,8 @@ def execute(args):
                           ci95=None, n=summary["n"], seeds={"train": [], "eval": []},
                           config_path=artifact_path(config_path),
                           artifact_paths=[artifact_path(trace_path), artifact_path(args.output / "summary.json"),
-                                          artifact_path(args.spec), artifact_path(args.profile), artifact_path(args.calibration)],
+                                          artifact_path(args.spec), artifact_path(args.profile),
+                                          artifact_path(args.output / "calibration.json")],
                           notes="Unique valid webcam frames only. Host acquisition-return to simulator step completion; "
                                 "sensor exposure/driver latency excluded. No motor, tracking-accuracy or task-success claim.")
             append_row(row)

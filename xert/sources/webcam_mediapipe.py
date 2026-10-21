@@ -4,6 +4,7 @@ OpenCV's read-return timestamp excludes unknown sensor exposure/driver buffering
 No camera is opened until WebcamSource is explicitly constructed.
 """
 import hashlib
+import math
 from pathlib import Path
 import threading
 import time
@@ -44,6 +45,7 @@ class WebcamSource:
         self.closed = False
         self.captured = self.inferred = self.overwritten = 0
         self.detector = detector
+        self.threads = []
         self.capture = capture if capture is not None else cv2.VideoCapture(camera)
         if not self.capture.isOpened():
             self.capture.release()
@@ -59,8 +61,16 @@ class WebcamSource:
             for thread in self.threads:
                 thread.start()
         except BaseException:
-            self.capture.release()
-            if self.detector is not None:
+            self.stop.set()
+            with self.condition:
+                self.condition.notify_all()
+            for thread in self.threads:
+                if thread.ident is not None:
+                    thread.join(timeout=5)
+            # Until capture starts, construction still owns the device.
+            if not self.threads or self.threads[0].ident is None:
+                self.capture.release()
+            if self.detector is not None and not any(t.is_alive() for t in self.threads):
                 self.detector.close()
             raise
 
@@ -87,6 +97,9 @@ class WebcamSource:
                     self.condition.notify_all()
         except BaseException as exc:
             self._fail(exc)
+        finally:
+            # Never release OpenCV's native handle concurrently with read().
+            self.capture.release()
 
     def _infer(self):
         last_ms = -1
@@ -121,16 +134,18 @@ class WebcamSource:
             frame, self.latest = self.latest, None
             return frame
 
-    def close(self):
+    def close(self, timeout=5):
         if self.closed:
             return
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Close timeout must be finite and positive")
         self.stop.set()
         with self.condition:
             self.condition.notify_all()
-        self.capture.release()
+        deadline = time.monotonic() + timeout
         for thread in self.threads:
-            thread.join(timeout=5)
+            thread.join(timeout=max(0, deadline - time.monotonic()))
         if any(thread.is_alive() for thread in self.threads):
-            raise RuntimeError("Camera/inference worker did not stop; detector remains owned by worker")
+            raise RuntimeError("Camera/inference worker did not stop before timeout; resources remain owned by workers")
         self.detector.close()
         self.closed = True

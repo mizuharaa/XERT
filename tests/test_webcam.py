@@ -57,3 +57,40 @@ def test_capture_mailbox_drops_old_frames_and_closes(tmp_path):
     assert capture.closed and detector.closed
     assert not any(t.is_alive() for t in source.threads)
     assert detector.timestamps == sorted(set(detector.timestamps))
+
+
+def test_blocked_capture_retains_handle_until_owning_worker_exits(tmp_path):
+    model = tmp_path / "model.task"
+    model.write_bytes(b"mock")
+    entered, unblock = threading.Event(), threading.Event()
+    class Capture:
+        closed = False
+        in_read = False
+        reader = None
+        def isOpened(self): return True
+        def read(self):
+            self.reader = threading.get_ident()
+            self.in_read = True
+            entered.set()
+            assert unblock.wait(2)
+            self.in_read = False
+            return True, np.zeros((4, 4, 3), dtype=np.uint8)
+        def release(self):
+            assert not self.in_read
+            assert threading.get_ident() == self.reader
+            self.closed = True
+    class Detector:
+        closed = False
+        def close(self): self.closed = True
+    capture, detector = Capture(), Detector()
+    source = WebcamSource(model, hashlib.sha256(b"mock").hexdigest(), capture=capture, detector=detector)
+    try:
+        assert entered.wait(2)
+        with pytest.raises(RuntimeError, match="timeout"):
+            source.close(timeout=.02)
+        assert not capture.closed and not detector.closed
+        assert source.threads[0].is_alive()
+    finally:
+        unblock.set()
+        source.close()
+    assert capture.closed and detector.closed
