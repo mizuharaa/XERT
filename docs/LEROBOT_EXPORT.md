@@ -76,6 +76,11 @@ are environment state. It uses the official
 [policy, loss, checkpoint format and temporal ensemble](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/policies/act/modeling_act.py).
 Normalization is explicit and verified against the original training-only
 statistics; the automatically generated whole-export statistics are not used.
+The official linear action head is retained. Validation scores its raw outputs;
+execution clips to the existing `[-1,1]` limits after temporal ensembling. The
+older model instead bounds predictions with tanh before ensembling. Runtime
+provenance includes hashes of the installed official model and configuration
+source, alongside package versions and the XERT runner hash.
 
 `requirements-act-windows-lock.txt` and `requirements-act-linux-lock.txt` extend
 the corresponding export lock with `mujoco==3.14.0` and `pybind11==3.1.0` plus

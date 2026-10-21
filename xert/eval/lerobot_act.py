@@ -184,6 +184,7 @@ def fit(episodes, settings, seed, metadata, output):
 
 
 def run(config_path, output):
+    from lerobot.policies.act import configuration_act, modeling_act
     from xle_workbench.sim import ManipulationEnv
     settings = json.loads(config_path.read_text('utf-8'))
     seeds = settings['training_seeds']
@@ -217,6 +218,8 @@ def run(config_path, output):
             'training_payload_sha256': [record.get('corrective_sha256', record['sha256']) for record in records],
             'reset_state_sha256': reset_states, 'hardware': False,
             'runtime': {key: importlib.metadata.version(key) for key in ('torch', 'numpy', 'lerobot', 'mujoco')},
+            'installed_source_sha256': {module.__name__: sha256(Path(module.__file__))
+                                        for module in (configuration_act, modeling_act)},
             'python': platform.python_version(),
             'feature_mapping': {'observation.state': records[0]['simulation']['observation_names'][:12],
                                 'observation.environment_state': records[0]['simulation']['observation_names'][12:]},
