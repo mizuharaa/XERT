@@ -3,3 +3,4 @@ cpp/** text eol=lf
 *.sh text eol=lf
 assets/xlerobot/LICENSE text eol=lf
 assets/xlerobot/xlerobot.xml text eol=lf
+assets/menagerie/** -text
