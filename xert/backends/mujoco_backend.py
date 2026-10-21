@@ -58,12 +58,16 @@ class MuJoCoBackend:
             raise ValueError("Command timestamps must be finite and strictly increasing")
         self.data.ctrl[self.actuators] = q
         previous_time = self.data.time
-        mujoco.mj_step(self.model, self.data, nstep=self.substeps)
-        if (not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all() or
-                not np.isclose(self.data.time - previous_time, 1 / self.spec.control_hz, rtol=0, atol=1e-9)):
-            raise RuntimeError("Simulation produced nonfinite state or reset its clock")
-        # mj_step integrates qpos after its last position-dependent calculations.
-        mujoco.mj_forward(self.model, self.data)
+        try:
+            mujoco.mj_step(self.model, self.data, nstep=self.substeps)
+            if (not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all() or
+                    not np.isclose(self.data.time - previous_time, 1 / self.spec.control_hz, rtol=0, atol=1e-9)):
+                raise RuntimeError("Simulation produced nonfinite state or reset its clock")
+            # mj_step integrates qpos after its last position-dependent calculations.
+            mujoco.mj_forward(self.model, self.data)
+        except Exception:
+            self.closed = True
+            raise
         self.last_command = float(t_cmd)
 
     def close(self):

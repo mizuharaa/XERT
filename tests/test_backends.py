@@ -26,6 +26,13 @@ def test_same_motion_driver_across_embodiments(name):
     assert len(q) == len(motion["frames"])
     assert np.isfinite(q).all()
     assert np.max(np.abs(q[-1] - spec.rest)) > 1e-6
+    zero_motion = json.loads(MOTION.read_text())
+    for frame in zero_motion["frames"]:
+        frame["offsets"] = {key: [0, 0, 0] for key in frame["offsets"]}
+    zero_result = drive(spec_path, zero_motion)
+    commands = np.asarray([f["command"] for f in result["records"]])
+    zero_commands = np.asarray([f["command"] for f in zero_result["records"]])
+    assert np.max(np.abs(commands - zero_commands)) > 1e-5
 
 
 def test_new_spec_requires_no_controller_edits(tmp_path):
@@ -92,3 +99,26 @@ def test_sites_match_returned_integrated_state():
     mujoco.mj_forward(backend.model, backend.data)
     np.testing.assert_allclose(reported, backend.data.site("grasp").xpos, rtol=0, atol=1e-12)
     backend.close()
+
+
+@pytest.mark.parametrize("fault", ["nan", "clock", "exception"])
+def test_engine_fault_latches_closed(monkeypatch, fault):
+    backend = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))
+    original = mujoco.mj_step
+
+    def broken_step(model, data, **kwargs):
+        if fault == "exception":
+            raise RuntimeError("Engine failed")
+        original(model, data, **kwargs)
+        if fault == "nan":
+            data.qpos[0] = float("nan")
+        else:
+            data.time = 0
+
+    monkeypatch.setattr(mujoco, "mj_step", broken_step)
+    with pytest.raises(RuntimeError):
+        backend.send_targets(backend.spec.rest, 0)
+    with pytest.raises(RuntimeError, match="closed"):
+        backend.send_targets(backend.spec.rest, 1)
+    with pytest.raises(RuntimeError, match="closed"):
+        backend.read_state()
