@@ -67,7 +67,46 @@ The installed SO follower defines the `.pos` names in
 Names do not change units: exported simulation targets are not calibrated motor
 commands. Its regression fixture is synthetic schema data, not a demonstration.
 
-The reference ACT baseline is a later slice. It must explicitly adapt the full
-observation to [ACT's input requirements](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/policies/act/configuration_act.py)
-and compute normalization using its training split. LeRobot's automatically
-generated whole-export statistics must not leak validation data into training.
+## Optional official ACT reference (P1.4)
+
+The reference runner adapts the full observation to
+[ACT's input requirements](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/policies/act/configuration_act.py):
+the first twelve features are joint position/velocity, and the remaining fourteen
+are environment state. It uses the official
+[policy, loss, checkpoint format and temporal ensemble](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/policies/act/modeling_act.py).
+Normalization is explicit and verified against the original training-only
+statistics; the automatically generated whole-export statistics are not used.
+The official linear action head is retained. Validation scores its raw outputs;
+execution clips to the existing `[-1,1]` limits after temporal ensembling. The
+older model instead bounds predictions with tanh before ensembling. Runtime
+provenance includes hashes of the installed official model and configuration
+source, alongside package versions and the XERT runner hash.
+
+`requirements-act-windows-lock.txt` and `requirements-act-linux-lock.txt` extend
+the corresponding export lock with `mujoco==3.14.0` and `pybind11==3.1.0` plus
+resolved dependencies. They were compiled with the same Python/platform flags
+as the export locks, using `-r requirements-lerobot-<platform>-lock.txt` and those
+two direct pins as input. CPU Torch/vision/codec wheel hashes remain unchanged.
+Sync only the optional environment:
+
+```powershell
+uv pip sync requirements-act-windows-lock.txt --python .venv-lerobot/Scripts/python.exe --only-binary :all:
+# In a VS 2022 developer shell, with dumpbin and lib on PATH:
+cmake -S . -B build/lerobot -G "Visual Studio 17 2022" -A x64 -DPython_EXECUTABLE="$PWD/.venv-lerobot/Scripts/python.exe"
+cmake --build build/lerobot --config Release --parallel 1
+ctest --test-dir build/lerobot -C Release
+.venv-lerobot/Scripts/python.exe -m pytest -q tests/test_lerobot_act.py
+.venv-lerobot/Scripts/python.exe -m xert.eval.lerobot_act --output results/p1.4/official_act_v1
+```
+
+On Linux, sync the Linux ACT lock, use `.venv-lerobot/bin/python`, and configure
+the separate build directory with `-DCMAKE_BUILD_TYPE=Release` without the
+Windows generator/architecture flags. The Python ABI suffix lets the optional
+native module coexist with the original interpreter's module. Do not run two
+native builds in the same build directory. Neither build changes the C++ source.
+
+The [predeclared protocol](../configs/lerobot_act_experiment.json) fixes the
+budget before evaluation. The runner refuses changed export hashes, split
+statistics, source contracts, or actual held-out reset states. It trains one seed
+at a time on one CPU thread and writes a ledger-generated comparison with P1.3.
+Use a fresh output directory for every attempt; interrupted artifacts are retained.
