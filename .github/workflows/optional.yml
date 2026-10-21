@@ -51,7 +51,7 @@ jobs:
       - name: Install headless runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libegl1 libgl1 libportaudio2
+          sudo apt-get install --no-install-recommends -y libegl1 libgl1 libgles2 libportaudio2
       - name: Install isolated vision dependencies
         run: |
           python -m venv .venv
