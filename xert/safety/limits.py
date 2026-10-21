@@ -52,13 +52,13 @@ class SafetyController:
         """Call exactly once per control period; e-stop is latched until reconstructed."""
         if type(estop) is not bool:
             raise ValueError("estop must be a boolean")
+        self.stopped |= estop
         if not np.isfinite(t_now) or (self.last_time is not None and
                 not np.isclose(t_now - self.last_time, self.dt, rtol=1e-6, atol=1e-9)):
             raise ValueError("SafetyController requires a finite fixed-rate command clock")
         desired = None if target is None else np.asarray(target, dtype=float)
         if desired is not None and (desired.shape != self.q.shape or not np.isfinite(desired).all()):
             raise ValueError("Target must be a finite ordered joint vector")
-        self.stopped |= bool(estop)
         events = []
         if self.stopped:
             # Emergency hold intentionally overrides the normal acceleration ramp.
@@ -72,7 +72,8 @@ class SafetyController:
             desired, phase = self.watchdog.select(desired, self.q, t_now, t_capture)
             limits = self.spec.position_limits
             bounded = np.clip(desired, *limits.T)
-            requested_velocity = (bounded - self.q) / self.dt
+            error = bounded - self.q
+            requested_velocity = np.sign(error) * np.minimum(np.abs(error) / self.dt, self._braking_speed(np.abs(error)))
             increment = self.spec.acceleration_limits * self.dt
             low = np.maximum(self.velocity - increment, -self._braking_speed(self.q - limits[:, 0]))
             high = np.minimum(self.velocity + increment, self._braking_speed(limits[:, 1] - self.q))
