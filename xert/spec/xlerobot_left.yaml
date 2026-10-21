@@ -1,0 +1,77 @@
+{
+  "name": "xlerobot_left",
+  "model_path": "../../assets/xlerobot/bench.xml",
+  "joint_names": [
+    "Rotation_L",
+    "Pitch_L",
+    "Elbow_L",
+    "Wrist_Pitch_L",
+    "Wrist_Roll_L",
+    "Jaw_L"
+  ],
+  "position_limits": [
+    [
+      -2.1,
+      2.1
+    ],
+    [
+      -0.1,
+      3.45
+    ],
+    [
+      -0.2,
+      3.14159
+    ],
+    [
+      -1.8,
+      1.8
+    ],
+    [
+      -3.14159,
+      3.14159
+    ],
+    [
+      -0.2,
+      1.4
+    ]
+  ],
+  "velocity_limits": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "acceleration_limits": [
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0,
+    3.0
+  ],
+  "rest": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "sites": [
+    "grasp"
+  ],
+  "mapping": {
+    "right_wrist": "grasp"
+  },
+  "ik_weights": {
+    "grasp": 1.0
+  },
+  "control_hz": 25,
+  "gripper": {
+    "joint": "Jaw_L",
+    "open": 1.4,
+    "closed": -0.1
+  }
+}
