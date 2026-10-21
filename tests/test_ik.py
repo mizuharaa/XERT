@@ -75,3 +75,19 @@ def test_measurement_preserves_existing_artifact(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         main()
     assert path.read_text() == "previous evidence"
+
+
+def test_simultaneous_targets_respect_weights():
+    from xle_workbench._reach_core import SiteTarget, solve_ik
+    model = mujoco.MjModel.from_xml_string('''<mujoco><worldbody><body>
+        <joint type="slide" axis="1 0 0" range="-2 2"/><geom size=".1"/>
+        <site name="left" pos="-.5 0 0"/><site name="right" pos=".5 0 0"/>
+        </body></worldbody></mujoco>''')
+    state = mujoco.MjData(model)
+    equal = solve_ik(model, state, [0], [SiteTarget(0, [0, 0, 0], [], 1),
+                                       SiteTarget(1, [0, 0, 0], [], 1)], [[-2, 2]], 100, .01)
+    weighted = solve_ik(model, state, [0], [SiteTarget(0, [0, 0, 0], [], 9),
+                                          SiteTarget(1, [0, 0, 0], [], 1)], [[-2, 2]], 100, .01)
+    np.testing.assert_allclose(equal, [0], atol=1e-8)
+    np.testing.assert_allclose(weighted, [.4], atol=1e-8)
+    assert abs(weighted[0] - .5) < abs(equal[0] - .5)
