@@ -1,0 +1,17 @@
+{
+  "mode": "curls",
+  "hand": "right",
+  "joints": {
+    "if_mcp": {"finger": "index", "segment": 0, "gain": 1},
+    "if_pip": {"finger": "index", "segment": 1, "gain": 1},
+    "if_dip": {"finger": "index", "segment": 2, "gain": 1},
+    "mf_mcp": {"finger": "middle", "segment": 0, "gain": 1},
+    "mf_pip": {"finger": "middle", "segment": 1, "gain": 1},
+    "mf_dip": {"finger": "middle", "segment": 2, "gain": 1},
+    "rf_mcp": {"finger": "ring", "segment": 0, "gain": 1},
+    "rf_pip": {"finger": "ring", "segment": 1, "gain": 1},
+    "rf_dip": {"finger": "ring", "segment": 2, "gain": 1},
+    "th_mcp": {"finger": "thumb", "segment": 1, "gain": 1},
+    "th_ipl": {"finger": "thumb", "segment": 2, "gain": 1}
+  }
+}

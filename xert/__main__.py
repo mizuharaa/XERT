@@ -10,7 +10,12 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     ledger = commands.add_parser("ledger")
     ledger.add_subparsers(dest="operation", required=True).add_parser("show")
-    parser.parse_args()
+    from .runtime.cli import add_commands, execute
+    add_commands(commands)
+    args = parser.parse_args()
+    if args.command != "ledger":
+        execute(args)
+        return
     for row in read_rows():
         print(json.dumps(row, allow_nan=False))
 
