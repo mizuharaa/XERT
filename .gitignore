@@ -6,3 +6,4 @@ data/
 *.log
 build/
 *.pyd
+*.so

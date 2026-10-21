@@ -26,9 +26,9 @@ try {
         if ($_ -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
     }
     if ($LASTEXITCODE -ne 0) { throw 'vcvars64 failed' }
-    & cmake -S . -B build -G 'Visual Studio 17 2022' -A x64
+    & cmake --preset windows
     if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
-    & cmake --build build --config Release --parallel 1
+    & cmake --build --preset windows
     if ($LASTEXITCODE -ne 0) { throw 'CMake build failed' }
 } finally {
     Pop-Location

@@ -1,0 +1,41 @@
+name: Linux build and tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      MUJOCO_GL: osmesa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install headless rendering library
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libosmesa6
+      - name: Install pinned Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+          .venv/bin/python -m pip install -r requirements-lock.txt
+          .venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+      - name: Build native core
+        run: bash scripts/build_core.sh
+      - name: Python tests
+        run: .venv/bin/python -m pytest -q
+      - name: C++ tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Exact C++ and Python equivalence
+        run: .venv/bin/python scripts/equivalence_check.py

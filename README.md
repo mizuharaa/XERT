@@ -12,7 +12,7 @@ XLeRobot arm manipulation workbench. The simulation core (physics loop, task sco
 | `cpp/src/trials.cpp` | Standalone `reach_trials` runner for scripted trials |
 | `cpp/tests/test_core.cpp` | CTest checks: observation layout, action validation, delay queue, contact-based success |
 
-Build (Windows only: Visual Studio 2022 C++ Build Tools, CMake 3.20+, the project `.venv`; the script installs pybind11 3.1.0 if missing):
+Build on Windows (Visual Studio 2022 C++ Build Tools, CMake 3.20+, the project `.venv`; the script installs pybind11 3.1.0 if missing):
 
 ```powershell
 .\scripts\build_core.ps1
@@ -21,7 +21,21 @@ ctest --test-dir build -C Release
 .\build\Release\reach_trials.exe --model build\bench.xml --positions build\positions.csv
 ```
 
-The core links against the `mujoco.dll` shipped in the installed `mujoco` Python wheel (3.14.0). `scripts/equivalence_check.py` runs the original pure-Python simulator (`tests/reference_sim.py`) and the C++ core side by side: on seeds 0-15 both succeed in 426 steps with a maximum observation difference of 0.0. Scripted trials: 9/9.
+Build on Linux (Python 3.11, CMake 3.20+, Make and a C++17 compiler):
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python -m pip install -r requirements-lock.txt
+bash scripts/build_core.sh
+.venv/bin/python -m pytest -q
+ctest --test-dir build -C Release --output-on-failure
+.venv/bin/python scripts/equivalence_check.py
+```
+
+The scripts use the `windows` and `linux` presets in `CMakePresets.json`; each builds into `build/` in its own platform checkout. For rendering without a display on Ubuntu, install `libosmesa6` and set `MUJOCO_GL=osmesa`. The Linux CI job uses this headless setup and runs the same tests plus exact C++/Python equivalence. See [P0.3](docs/learn/P0.3.md) for verification status.
+
+The core links against the shared library shipped in the installed `mujoco` Python wheel (3.14.0): `mujoco.dll` on Windows, `libmujoco.so.3.14.0` on Linux. `scripts/equivalence_check.py` runs the original pure-Python simulator (`tests/reference_sim.py`) and the C++ core side by side: on seeds 0-15 both succeed in 426 steps with a maximum observation difference of 0.0. Scripted trials: 9/9.
 
 A local reference implementation for learning the full robotics-data loop:
 

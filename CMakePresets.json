@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": {"major": 3, "minor": 20, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "windows",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "linux",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+    }
+  ],
+  "buildPresets": [
+    {"name": "windows", "configurePreset": "windows", "configuration": "Release", "jobs": 1},
+    {"name": "linux", "configurePreset": "linux", "jobs": 1}
+  ],
+  "testPresets": [
+    {"name": "windows", "configurePreset": "windows", "configuration": "Release", "output": {"outputOnFailure": true}},
+    {"name": "linux", "configurePreset": "linux", "output": {"outputOnFailure": true}}
+  ]
+}
