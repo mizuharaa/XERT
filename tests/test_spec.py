@@ -22,6 +22,7 @@ def test_existing_arm_spec():
     ("velocity_limits", [0] * 6), ("acceleration_limits", [float("nan")] * 6),
     ("position_limits", [[2, 1]] * 6), ("position_limits", [[-100, 100]] * 6),
     ("rest", [100] * 6), ("control_hz", 0), ("control_hz", True),
+    ("velocity_limits", [True] * 6), ("rest", ["0"] * 6),
     ("mapping", {"wrist": "missing"}), ("ik_weights", {"grasp": -1}),
     ("gripper", {"joint": "Jaw_L", "open": 100, "closed": 0}),
 ])
@@ -39,4 +40,40 @@ def test_non_json_yaml_is_explicitly_rejected(tmp_path):
     path = tmp_path / "unsupported.yaml"
     path.write_text("name: example\n")
     with pytest.raises(ValueError, match="JSON-compatible"):
+        load_spec(path)
+
+
+def test_scene_snapshot_matches_current_builder():
+    import mujoco
+    from xle_workbench.sim import model_xml
+    saved = load_spec(SPEC).load_model()
+    current = mujoco.MjModel.from_xml_string(model_xml())
+    for name in ("body_pos", "body_quat", "jnt_range", "jnt_pos", "jnt_axis", "site_pos",
+                 "actuator_ctrlrange", "geom_pos", "geom_size", "mesh_vert"):
+        np.testing.assert_array_equal(getattr(saved, name), getattr(current, name))
+
+
+@pytest.mark.parametrize("kind", ["joint", "site"])
+def test_unknown_mjcf_names(tmp_path, kind):
+    raw = json.loads(SPEC.read_text())
+    raw["model_path"] = str((SPEC.parent / raw["model_path"]).resolve())
+    if kind == "joint":
+        raw["joint_names"][0] = "unknown_joint"
+    else:
+        raw["sites"] = ["unknown_site"]
+        raw["mapping"] = {"wrist": "unknown_site"}
+        raw["ik_weights"] = {"unknown_site": 1}
+    path = tmp_path / "bad.yaml"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="Unknown"):
+        load_spec(path)
+
+
+def test_position_actuator_bounds(tmp_path):
+    raw = json.loads(SPEC.read_text())
+    raw["model_path"] = str((SPEC.parent / raw["model_path"]).resolve())
+    raw["position_limits"][-1] = [-3, 3]
+    path = tmp_path / "bad.yaml"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="actuator"):
         load_spec(path)

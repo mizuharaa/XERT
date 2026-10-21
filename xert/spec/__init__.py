@@ -47,6 +47,11 @@ def load_spec(path: str | Path) -> EmbodimentSpec:
             raise ValueError(f"{label} must contain unique nonempty names")
     arrays = {}
     for key in ("position_limits", "velocity_limits", "acceleration_limits", "rest"):
+        def numeric(value):
+            return (all(numeric(v) for v in value) if isinstance(value, list)
+                    else type(value) in (int, float))
+        if not numeric(raw[key]):
+            raise ValueError(f"{key} must contain numbers, not strings or booleans")
         values = np.asarray(raw[key], dtype=float)
         shape = (len(names), 2) if key == "position_limits" else (len(names),)
         if values.shape != shape or not np.isfinite(values).all():
@@ -75,7 +80,7 @@ def load_spec(path: str | Path) -> EmbodimentSpec:
         if set(gripper) != {"joint", "open", "closed"} or gripper["joint"] not in names:
             raise ValueError("gripper needs a declared joint, open and closed positions")
         lo, hi = limits[names.index(gripper["joint"])]
-        if any(not isinstance(gripper[k], (int, float)) or not lo <= gripper[k] <= hi
+        if any(type(gripper[k]) not in (int, float) or not lo <= gripper[k] <= hi
                for k in ("open", "closed")):
             raise ValueError("Gripper positions must lie inside limits")
     if not isinstance(raw["model_path"], str) or not raw["model_path"]:
@@ -93,6 +98,18 @@ def load_spec(path: str | Path) -> EmbodimentSpec:
             raise ValueError(f"Joint must have one coordinate: {name}")
         if joint.limited[0] and (limits[i, 0] < joint.range[0] - 1e-8 or limits[i, 1] > joint.range[1] + 1e-8):
             raise ValueError(f"Spec exceeds MJCF joint limits: {name}")
+        for a in range(model.nu):
+            # A unit-gear position actuator's control is a joint position; torque limits are not.
+            position = (model.actuator_trntype[a] == mujoco.mjtTrn.mjTRN_JOINT and
+                        model.actuator_trnid[a, 0] == joint.id and model.actuator_gear[a, 0] == 1 and
+                        model.actuator_gaintype[a] == mujoco.mjtGain.mjGAIN_FIXED and
+                        model.actuator_biastype[a] == mujoco.mjtBias.mjBIAS_AFFINE and
+                        model.actuator_gainprm[a, 0] > 0 and
+                        model.actuator_biasprm[a, 1] == -model.actuator_gainprm[a, 0])
+            if position and model.actuator_ctrllimited[a] and (
+                    limits[i, 0] < model.actuator_ctrlrange[a, 0] - 1e-8 or
+                    limits[i, 1] > model.actuator_ctrlrange[a, 1] + 1e-8):
+                raise ValueError(f"Spec exceeds position actuator target limits: {name}")
     for name in sites:
         if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name) < 0:
             raise ValueError(f"Unknown site: {name}")
