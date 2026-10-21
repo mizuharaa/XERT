@@ -94,16 +94,16 @@ def load_spec(path: str | Path) -> EmbodimentSpec:
             joint = model.joint(name)
         except KeyError as exc:
             raise ValueError(f"Unknown joint: {name}") from exc
-        if joint.type[0] not in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE):
+        if int(joint.type[0]) not in (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE)):
             raise ValueError(f"Joint must have one coordinate: {name}")
         if joint.limited[0] and (limits[i, 0] < joint.range[0] - 1e-8 or limits[i, 1] > joint.range[1] + 1e-8):
             raise ValueError(f"Spec exceeds MJCF joint limits: {name}")
         for a in range(model.nu):
             # A unit-gear position actuator's control is a joint position; torque limits are not.
-            position = (model.actuator_trntype[a] == mujoco.mjtTrn.mjTRN_JOINT and
+            position = (int(model.actuator_trntype[a]) == int(mujoco.mjtTrn.mjTRN_JOINT) and
                         model.actuator_trnid[a, 0] == joint.id and model.actuator_gear[a, 0] == 1 and
-                        model.actuator_gaintype[a] == mujoco.mjtGain.mjGAIN_FIXED and
-                        model.actuator_biastype[a] == mujoco.mjtBias.mjBIAS_AFFINE and
+                        int(model.actuator_gaintype[a]) == int(mujoco.mjtGain.mjGAIN_FIXED) and
+                        int(model.actuator_biastype[a]) == int(mujoco.mjtBias.mjBIAS_AFFINE) and
                         model.actuator_gainprm[a, 0] > 0 and
                         model.actuator_biasprm[a, 1] == -model.actuator_gainprm[a, 0])
             if position and model.actuator_ctrllimited[a] and (
