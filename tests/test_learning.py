@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from xle_workbench.learning import ActionChunks, StateACT, episode_split, load_policy, masked_loss, train
+from xle_workbench.learning import LoadedPolicy, validate_config
 
 
 def episodes():
@@ -106,6 +107,33 @@ def test_act_padded_posterior_and_deterministic_prior():
         other_prior, _ = model(obs)
         torch.testing.assert_close(prior, other_prior, rtol=0, atol=0)
         assert prior_kl.item() == 0
+
+
+def test_temporal_ensemble_replans_aligns_and_resets():
+    class ChunkModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def forward(self, observation):
+            self.calls += 1
+            return torch.tensor([[[.1], [.2], [.3]]]) + (self.calls - 1) * .2, torch.tensor(0.)
+
+    model = ChunkModel()
+    policy = LoadedPolicy(model, dict(obs_dim=1, observation_mean=[0.], observation_scale=[1.],
+                                     config={'temporal_ensemble': True, 'ensemble_decay': np.log(2)}))
+    np.testing.assert_allclose(policy.act([0]), [.1])
+    np.testing.assert_allclose(policy.act([1]), [(.2 * .5 + .3) / 1.5])
+    np.testing.assert_allclose(policy.act([2]), [(.3 * .25 + .4 * .5 + .5) / 1.75])
+    assert model.calls == 3 and len(policy.chunks) == 2
+    policy.reset()
+    assert not policy.chunks
+    np.testing.assert_allclose(policy.act([3]), [.7])
+    for invalid in ({'model_type': 'act', 'temporal_ensemble': 'yes'},
+                    {'model_type': 'act', 'ensemble_decay': float('nan')},
+                    {'temporal_ensemble': True}):
+        with pytest.raises(ValueError):
+            validate_config(invalid)
 
 
 def test_checkpoint_rejects_nonfinite_weights_and_normalization(tmp_path):

@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 DEFAULTS = dict(model_type="baseline_mlp", epochs=20, batch_size=64, chunk_size=8,
                 hidden_dim=64, seed=0, val_fraction=0.2, lr=0.001,
-                kl_weight=0.01, device="cpu")
+                kl_weight=0.01, device="cpu", temporal_ensemble=False, ensemble_decay=.01)
 
 
 def validate_config(config):
@@ -33,14 +33,18 @@ def validate_config(config):
     if cfg["hidden_dim"] % 4:
         raise ValueError("hidden_dim must be divisible by four attention heads")
     for key, low, high in (("val_fraction", 0.01, 0.5), ("lr", 1e-7, 0.1),
-                           ("kl_weight", 0.0, 100.0)):
+                           ("kl_weight", 0.0, 100.0), ('ensemble_decay', 0.0, 10.0)):
         if isinstance(cfg[key], bool) or not isinstance(cfg[key], (int, float)) or not math.isfinite(cfg[key]) or not low <= cfg[key] <= high:
             raise ValueError(f"{key} must be finite and in [{low}, {high}]")
     if cfg["device"] not in ("cpu", "cuda"):
         raise ValueError("device must be cpu or cuda")
     if cfg["device"] == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA requested but unavailable; explicitly select cpu")
+    if type(cfg['temporal_ensemble']) is not bool:
+        raise ValueError('temporal_ensemble must be a boolean')
     if cfg["model_type"] == "baseline_mlp":
+        if cfg['temporal_ensemble']:
+            raise ValueError('temporal_ensemble requires model_type act')
         cfg["chunk_size"] = 1
     return cfg
 
@@ -104,7 +108,7 @@ class BaselineMLP(nn.Module):
 
 
 class StateACT(nn.Module):
-    """Compact CVAE action chunker, no vision backbone and no temporal ensemble."""
+    """Compact state-only CVAE; LoadedPolicy controls how predicted chunks execute."""
     def __init__(self, obs_dim, action_dim, hidden_dim, chunk_size):
         super().__init__()
         self.latent_dim = 16
@@ -240,7 +244,7 @@ def train(episodes, output_dir: Path, config: dict, progress=None, cancelled=Non
                     training_episode_indices=train_ids, validation_episode_indices=val_ids,
                     episode_sha256=fingerprints, best_epoch=best_epoch,
                     best_validation_mae=best_mae, history=history,
-                    execution="open_loop_action_chunks", observations="state_only",
+                    execution='temporal_ensemble' if cfg['temporal_ensemble'] else 'open_loop_action_chunks', observations="state_only",
                     rollout_success_measured=False)
     output_dir.mkdir(parents=True, exist_ok=True)
     tmp = output_dir / "model.pt.tmp"
@@ -259,20 +263,38 @@ class LoadedPolicy:
         self.mean = np.asarray(metadata["observation_mean"], np.float32)
         self.scale = np.asarray(metadata["observation_scale"], np.float32)
         self.pending = deque()
+        self.chunks = deque()
+        self.temporal_ensemble = metadata.get('config', {}).get('temporal_ensemble', False)
+        self.ensemble_decay = metadata.get('config', {}).get('ensemble_decay', .01)
 
     def reset(self):
         self.pending.clear()
+        self.chunks.clear()
 
     def act(self, observation):
         obs = np.asarray(observation, dtype=np.float32)
         if obs.shape != (self.metadata["obs_dim"],) or not np.isfinite(obs).all():
             raise ValueError("Observation must match saved dimensions and contain only finite values")
-        if not self.pending:
+        if self.temporal_ensemble or not self.pending:
             x = torch.from_numpy(_normalize(obs, self.mean, self.scale)).unsqueeze(0)
             with torch.inference_mode():
                 chunk, _ = self.model(x)
-            self.pending.extend(chunk[0].numpy())
-        action = np.clip(self.pending.popleft(), -1, 1).copy()
+            prediction = chunk[0].numpy()
+            if not np.isfinite(prediction).all():
+                raise ValueError('Policy produced non-finite action')
+            if self.temporal_ensemble:
+                self.chunks.append((0, prediction))
+            else:
+                self.pending.extend(prediction)
+        if self.temporal_ensemble:
+            # Weight the prediction for this exact tick from each still-valid chunk.
+            weights = np.exp(-self.ensemble_decay * np.asarray([age for age, _ in self.chunks]))
+            action = np.average(np.asarray([values[age] for age, values in self.chunks]),
+                                axis=0, weights=weights).astype(np.float32)
+            self.chunks = deque((age + 1, values) for age, values in self.chunks if age + 1 < len(values))
+        else:
+            action = self.pending.popleft()
+        action = np.clip(action, -1, 1).copy()
         if not np.isfinite(action).all():
             raise ValueError("Policy produced non-finite action")
         return action

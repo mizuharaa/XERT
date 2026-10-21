@@ -183,7 +183,7 @@ def wilson(successes: int, count: int) -> list[float]:
 
 def evaluate(store: Store, seeds: list[int], config: dict | None = None,
              model_id: str | None = None, progress=None, cancelled=None, *,
-             experiment: str | None = None) -> dict:
+             experiment: str | None = None, slice_id: str = 'P0.2') -> dict:
     from .sim import ManipulationEnv
     if not seeds or len(seeds) > 100 or len(set(seeds)) != len(seeds):
         raise ValueError("Choose 1..100 unique evaluation seeds")
@@ -237,7 +237,7 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
             artifacts.extend(store.path("models", model_id) / name
                              for name in ("pipeline.json", "metadata.json", "model.pt"))
         row = ledger.new_row(
-            **provenance, slice="P0.2", experiment=experiment or f"evaluation_{identifier}",
+            **provenance, slice=slice_id, experiment=experiment or f"evaluation_{identifier}",
             backend="mujoco", embodiment="xlerobot_left", metric="success_rate",
             value=report["success_rate"], ci95=report["success_rate_ci95"], n=report["trials"],
             seeds={"train": train_seeds, "eval": list(seeds)},
