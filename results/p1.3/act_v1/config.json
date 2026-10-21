@@ -1,0 +1,63 @@
+{
+  "collection_path": "results/p1.2/recovery_integrated/collection.json",
+  "dataset_path": "results/p1.2/recovery_integrated/dataset",
+  "chunk_sizes": [
+    10,
+    20,
+    50
+  ],
+  "sweep_epochs": 3,
+  "sweep_seed": 0,
+  "training_seeds": [
+    0,
+    1,
+    2
+  ],
+  "evaluation_seeds": [
+    10000,
+    10001,
+    10002,
+    10003,
+    10004,
+    10005,
+    10006,
+    10007,
+    10008,
+    10009,
+    10010,
+    10011,
+    10012,
+    10013,
+    10014,
+    10015,
+    10016,
+    10017,
+    10018,
+    10019,
+    10020,
+    10021,
+    10022,
+    10023,
+    10024,
+    10025,
+    10026,
+    10027,
+    10028,
+    10029
+  ],
+  "training": {
+    "model_type": "act",
+    "epochs": 20,
+    "hidden_dim": 32,
+    "batch_size": 128,
+    "lr": 0.001,
+    "kl_weight": 0.01,
+    "val_fraction": 0.2,
+    "device": "cpu",
+    "temporal_ensemble": true,
+    "ensemble_decay": 0.01
+  },
+  "notes": "Fixed CPU budget declared before held-out evaluation. Select chunk length only by validation MAE after the equal-budget sweep. Train three new models with selected length; report each seed independently. No held-out tuning, binary gripper head, scripted fallback, or claim of a converged optimum.",
+  "git_commit": "3baa44ba69056af555c1de7633b6a9942a21af6b",
+  "git_dirty": false
+}

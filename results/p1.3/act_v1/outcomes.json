@@ -1,0 +1,45 @@
+{
+  "chunk_size": 50,
+  "outcomes": [
+    {
+      "train_seed": 0,
+      "model_id": "3c9ae134fd1043f0882c7c26a7393a44",
+      "evaluation_id": "d6564ab2ccde4d4fa15feac9e9c0bea2",
+      "ledger_id": "d35d3a3e-8f9b-4a9e-a6e4-d5283d807197",
+      "successes": 30,
+      "n": 30,
+      "success_rate": 1.0,
+      "ci95": [
+        0.8864829086095221,
+        1.0
+      ]
+    },
+    {
+      "train_seed": 1,
+      "model_id": "4c8c74734dff45d39fd7980fbc8569b0",
+      "evaluation_id": "09eff017462443b8b1b3ca5c2cbdb586",
+      "ledger_id": "8ab93c8e-e880-49c2-a7f6-2229615d92e2",
+      "successes": 30,
+      "n": 30,
+      "success_rate": 1.0,
+      "ci95": [
+        0.8864829086095221,
+        1.0
+      ]
+    },
+    {
+      "train_seed": 2,
+      "model_id": "bffdf7735a064de68e87716a3530adae",
+      "evaluation_id": "4e83768dba274f15ba8646ce05d48587",
+      "ledger_id": "c98903f8-a108-4e12-8b59-b1091ae48467",
+      "successes": 30,
+      "n": 30,
+      "success_rate": 1.0,
+      "ci95": [
+        0.8864829086095221,
+        1.0
+      ]
+    }
+  ],
+  "complete": true
+}
