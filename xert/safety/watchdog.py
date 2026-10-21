@@ -9,6 +9,7 @@ class Watchdog:
         self.rest = rest.copy()
         self.stale_s, self.hold_s, self.return_s = stale_s, hold_s, return_s
         self.last_capture = None
+        self.last_live = None
         self.started = None
         self.hold = None
 
@@ -25,9 +26,12 @@ class Watchdog:
             self.last_capture = capture
         elif target is not None:
             raise ValueError("A target requires its capture timestamp")
-        last = self.started if self.last_capture is None else self.last_capture
+        fresh = target is not None and now - capture <= self.stale_s
+        if fresh:
+            self.last_live = capture
+        last = self.started if self.last_live is None else self.last_live
         age = now - last
-        if target is not None and age <= self.stale_s:
+        if fresh:
             self.hold = None
             return target, "live"
         if self.hold is None:
