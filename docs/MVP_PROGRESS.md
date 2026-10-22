@@ -17,9 +17,9 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P1.1 | Complete | [Diagnosis](learn/P1.1.md), saved predictions and joint-error plots |
 | P1.2 | Complete | [Recovery collection](learn/P1.2.md), immutable executed actions and corrective labels |
 | P1.3 | Complete | [ACT experiment](learn/P1.3.md), [ledger-generated held-out results](../results/p1.3/act_v1/report.md) |
-| P1.4 | In progress | [Reviewed official ACT runner](learn/P1.4.md); fixed-protocol measurements underway |
+| P1.4 | Complete | [Official ACT comparison](learn/P1.4.md), [ledger-generated results](../results/p1.4/official_act_v1/comparison.md), [independent QA](reviews/OFFICIAL_ACT_QA.md) |
 | P2.1 | Complete | [Lossless LeRobot export](learn/P2.1.md), real reader round trip and ledger-backed dataset |
-| P2.2 | Pending | Direct recording with timestamps and safety events |
+| P2.2 | Complete | [Direct LeRobot recording](learn/P2.2.md), timestamp/mask preservation and [scripted round-trip QA](reviews/RECORDER_QA.md) |
 | P3.1 | Complete | [Validated embodiment specifications](learn/P3.1.md) |
 | P3.2 | Complete | [Generalized IK](learn/P3.2.md), reachable-target measurements in the ledger |
 | P3.3 | Complete | [Command limits, watchdog and emergency stop](learn/P3.3.md), regression checks |
@@ -32,15 +32,26 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P5.2 | Pending | Thresholds committed before gated training |
 | P5.3 | Pending | All/gated/random-control experiment and report |
 
-Accepted slices: P0.1–P0.3, P1.1–P1.3, P2.1 and P3.1–P3.4.
-These are eleven of the twenty required simulation slices. This counts accepted
+Accepted slices: P0.1–P0.3, P1.1–P1.4, P2.1–P2.2 and P3.1–P3.4.
+These are thirteen of the twenty required simulation slices. This counts accepted
 slices, not equal engineering effort or a finished end-to-end MVP.
 
 The learned-policy result applies to the existing XLeRobot-arm MuJoCo task.
 SO101, fixed G1 upper body and LEAP hand share the new scripted middleware path;
 the learning experiment does not establish learned cross-robot transfer.
-See the [interview notes](learn/INDEX.md), [independent QA report](reviews/SIM_MVP_QA.md)
-and [final source integration CI](https://github.com/mizuharaa/XERT/actions/runs/39652493894).
+See the [interview notes](learn/INDEX.md), [original simulation QA](reviews/SIM_MVP_QA.md),
+[export/runtime QA](reviews/DATA_RUNTIME_QA.md), [recorder QA](reviews/RECORDER_QA.md),
+and [official ACT QA](reviews/OFFICIAL_ACT_QA.md).
+The integrated source at `4a64bb4` passed both the
+[Linux build and legacy equivalence checks](https://github.com/mizuharaa/XERT/actions/runs/39671141509)
+and [real optional-stack checks](https://github.com/mizuharaa/XERT/actions/runs/39671141712).
+After merging the measured artifacts, Windows checks also passed for the base
+environment, isolated LeRobot/ACT/recorder environment, and isolated vision environment.
+The historical ledger prefix and every recorded artifact checksum were preserved.
 
-The remaining slices retain their original acceptance criteria. No hardware
-commands or human-data claims are authorized by this simulation checkpoint.
+The remaining slices retain their original acceptance criteria. P3.5 needs a real
+neutral-pose calibration and live webcam measurements for each embodiment. P3.6
+needs recorded human motion, and P4.2 needs actual human demonstrations before
+the quality-gate experiment can be accepted. Scripted recorder checks satisfy
+neither requirement. No hardware commands or human-data claims are authorized
+by this simulation checkpoint.
