@@ -1,0 +1,23 @@
+{
+  "outcomes": [
+    {
+      "train_seed": 0,
+      "successes": 30,
+      "ledger_id": "15103d29-afdb-4853-8e63-717e448723ba",
+      "reference_ledger_id": "d35d3a3e-8f9b-4a9e-a6e4-d5283d807197"
+    },
+    {
+      "train_seed": 1,
+      "successes": 18,
+      "ledger_id": "93e321d8-0b9c-49d0-9692-b6ecb8af6909",
+      "reference_ledger_id": "8ab93c8e-e880-49c2-a7f6-2229615d92e2"
+    },
+    {
+      "train_seed": 2,
+      "successes": 30,
+      "ledger_id": "18dee197-8c4f-43ae-8324-0a1b996e2dbf",
+      "reference_ledger_id": "c98903f8-a108-4e12-8b59-b1091ae48467"
+    }
+  ],
+  "complete": true
+}
