@@ -1,0 +1,324 @@
+{
+    "codebase_version": "v3.0",
+    "fps": 25,
+    "features": {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "if_mcp.pos",
+                "if_rot.pos",
+                "if_pip.pos",
+                "if_dip.pos",
+                "mf_mcp.pos",
+                "mf_rot.pos",
+                "mf_pip.pos",
+                "mf_dip.pos",
+                "rf_mcp.pos",
+                "rf_rot.pos",
+                "rf_pip.pos",
+                "rf_dip.pos",
+                "th_cmc.pos",
+                "th_axl.pos",
+                "th_mcp.pos",
+                "th_ipl.pos"
+            ]
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "if_mcp.pos",
+                "if_rot.pos",
+                "if_pip.pos",
+                "if_dip.pos",
+                "mf_mcp.pos",
+                "mf_rot.pos",
+                "mf_pip.pos",
+                "mf_dip.pos",
+                "rf_mcp.pos",
+                "rf_rot.pos",
+                "rf_pip.pos",
+                "rf_dip.pos",
+                "th_cmc.pos",
+                "th_axl.pos",
+                "th_mcp.pos",
+                "th_ipl.pos"
+            ]
+        },
+        "xert.observation_velocity": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "if_mcp.vel",
+                "if_rot.vel",
+                "if_pip.vel",
+                "if_dip.vel",
+                "mf_mcp.vel",
+                "mf_rot.vel",
+                "mf_pip.vel",
+                "mf_dip.vel",
+                "rf_mcp.vel",
+                "rf_rot.vel",
+                "rf_pip.vel",
+                "rf_dip.vel",
+                "th_cmc.vel",
+                "th_axl.vel",
+                "th_mcp.vel",
+                "th_ipl.vel"
+            ]
+        },
+        "xert.next_observation": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "if_mcp.pos",
+                "if_rot.pos",
+                "if_pip.pos",
+                "if_dip.pos",
+                "mf_mcp.pos",
+                "mf_rot.pos",
+                "mf_pip.pos",
+                "mf_dip.pos",
+                "rf_mcp.pos",
+                "rf_rot.pos",
+                "rf_pip.pos",
+                "rf_dip.pos",
+                "th_cmc.pos",
+                "th_axl.pos",
+                "th_mcp.pos",
+                "th_ipl.pos"
+            ]
+        },
+        "xert.next_velocity": {
+            "dtype": "float32",
+            "shape": [
+                16
+            ],
+            "names": [
+                "if_mcp.vel",
+                "if_rot.vel",
+                "if_pip.vel",
+                "if_dip.vel",
+                "mf_mcp.vel",
+                "mf_rot.vel",
+                "mf_pip.vel",
+                "mf_dip.vel",
+                "rf_mcp.vel",
+                "rf_rot.vel",
+                "rf_pip.vel",
+                "rf_dip.vel",
+                "th_cmc.vel",
+                "th_axl.vel",
+                "th_mcp.vel",
+                "th_ipl.vel"
+            ]
+        },
+        "xert.times": {
+            "dtype": "float64",
+            "shape": [
+                8
+            ],
+            "names": [
+                "t_control",
+                "t_sim_before",
+                "t_sim",
+                "t_capture",
+                "t_landmarks",
+                "t_ik",
+                "t_command",
+                "t_applied"
+            ]
+        },
+        "xert.times_present": {
+            "dtype": "bool",
+            "shape": [
+                8
+            ],
+            "names": [
+                "t_control",
+                "t_sim_before",
+                "t_sim",
+                "t_capture",
+                "t_landmarks",
+                "t_ik",
+                "t_command",
+                "t_applied"
+            ]
+        },
+        "xert.handedness_scores": {
+            "dtype": "float32",
+            "shape": [
+                2
+            ],
+            "names": [
+                "left",
+                "right"
+            ]
+        },
+        "xert.handedness_present": {
+            "dtype": "bool",
+            "shape": [
+                2
+            ],
+            "names": [
+                "left",
+                "right"
+            ]
+        },
+        "xert.clamped": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "clamped"
+            ]
+        },
+        "xert.valid_motion": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "valid_motion"
+            ]
+        },
+        "xert.latency_sample": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "latency_sample"
+            ]
+        },
+        "xert.frame_sequence_present": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "frame_sequence_present"
+            ]
+        },
+        "xert.tracking_confidence_present": {
+            "dtype": "bool",
+            "shape": [
+                1
+            ],
+            "names": [
+                "tracking_confidence_present"
+            ]
+        },
+        "xert.clamp_count": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "clamp_count"
+            ]
+        },
+        "xert.frame_sequence": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": [
+                "frame_sequence"
+            ]
+        },
+        "xert.tracking_confidence": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": [
+                "tracking_confidence"
+            ]
+        },
+        "xert.phase": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "phase"
+            ]
+        },
+        "xert.source": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "source"
+            ]
+        },
+        "xert.events_json": {
+            "dtype": "string",
+            "shape": [
+                1
+            ],
+            "names": [
+                "events_json"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    },
+    "total_episodes": 1,
+    "total_frames": 12,
+    "total_tasks": 1,
+    "chunks_size": 1000,
+    "data_files_size_in_mb": 100,
+    "video_files_size_in_mb": 200,
+    "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+    "video_path": null,
+    "robot_type": "leap_hand",
+    "splits": {
+        "train": "0:1"
+    }
+}
