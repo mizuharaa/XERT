@@ -71,3 +71,39 @@ each embodiment and their ledger-backed latency measurements remain outstanding.
 Focused tests and static reviews are software verification, not portfolio
 performance measurements. Full-suite and hosted optional-stack checks belong to
 the integration lane and must be reported at their actual commit boundaries.
+
+## P3.5 hardening follow-up
+
+The actual Claude CLI repeated its repository-scoped, read-only review at
+`8690df8` and reported model `claude-opus-5-5`. Codex independently reviewed
+fixes `1f4f2fb` and `0e00ee6`, integrated together at `8091b16`. No unresolved
+software blocker was found in this bounded review. Live-input acceptance remains
+partial.
+
+Independent injected-failure probes confirmed that cleanup could replace the
+original runtime exception and that capture release failures could escape their
+worker without reaching the caller. The fixed loop preserves the primary error,
+attaches later cleanup errors and attempts both resource closures. Capture
+release failures now reach the shared error channel; detector closure is not
+retried after a failed attempt. The isolated vision runtime, safety and
+mock-camera suite passed at `1f4f2fb`, including blocked-worker ownership tests.
+
+The calibration follow-up parses and hashes the same captured spec/profile
+bytes, retains immutable latency snapshots and records hashes of every reported
+artifact. The recorder and scripted recording caller use the same captured-spec
+path. Malformed image dimensions and invalid profile values fail before camera
+acquisition. CLI cleanup preserves primary errors. The calibration CLI and real
+LeRobot recorder tests passed independently at `0e00ee6`, including source-path
+mutation and cleanup-failure regressions.
+
+Claude identified conditional sampling as a reporting limitation but suggested
+counting rejected stale frames as applied latency. That remedy was rejected:
+those targets were not applied. Eligibility remains unique, fresh, valid,
+successfully applied frames. Counts and traces must accompany the conditional
+percentiles; they do not describe latency for dropped or rejected frames.
+
+Raw Claude output and independent probes remain in ignored `build/qa`. These
+follow-up checks produced no camera observations, synthetic latency ledger rows,
+human demonstrations or hardware results. Historical measurements retain their
+original source commits. Final integration suites and CI are separately owned
+by the integration lane.
