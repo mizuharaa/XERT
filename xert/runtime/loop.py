@@ -14,6 +14,7 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
     Latency covers host acquisition return through simulator step completion only.
     """
     records = []
+    failure = None
     try:
         if not np.isfinite(duration) or duration <= 0:
             raise ValueError("Duration must be finite and positive")
@@ -75,8 +76,19 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
                 break
             tick += 1
         return records
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        try:
-            source.close()
-        finally:
-            backend.close()
+        cleanup_failure = None
+        for name, resource in (("source", source), ("backend", backend)):
+            try:
+                resource.close()
+            except BaseException as exc:
+                primary = failure if failure is not None else cleanup_failure
+                if primary is None:
+                    cleanup_failure = exc
+                else:
+                    primary.add_note(f"Additional {name} cleanup failure: {exc!r}")
+        if cleanup_failure is not None:
+            raise cleanup_failure
