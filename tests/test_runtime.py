@@ -152,6 +152,27 @@ def test_estop_callback_latches_hold():
     assert records[0]["phase"] == "estop" and not records[0]["latency_sample"]
 
 
+@pytest.mark.parametrize("bad_duration", [False, True])
+def test_cleanup_preserves_first_failure_and_attempts_both_resources(bad_duration):
+    backend = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))
+    source, clock = Source([]), Clock()
+    close_backend = backend.close
+    def bad_source_close():
+        source.closed = True
+        raise RuntimeError("source cleanup failed")
+    def bad_backend_close():
+        close_backend()
+        raise RuntimeError("backend cleanup failed")
+    source.close, backend.close = bad_source_close, bad_backend_close
+    expected, message = (ValueError, "Duration") if bad_duration else (RuntimeError, "source cleanup")
+    with pytest.raises(expected, match=message) as caught:
+        run_loop(source, backend, None, -1 if bad_duration else .04, clock=clock, sleep=clock.sleep)
+    assert source.closed and backend.closed
+    assert any("backend cleanup failed" in note for note in caught.value.__notes__)
+    if bad_duration:
+        assert any("source cleanup failed" in note for note in caught.value.__notes__)
+
+
 def test_latency_snapshots_same_calibration_bytes_that_mapper_received(tmp_path, monkeypatch):
     from xert.eval import ledger
     from xert.retarget import calibrate

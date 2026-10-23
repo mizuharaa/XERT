@@ -47,10 +47,9 @@ class WebcamSource:
         self.detector = detector
         self.threads = []
         self.capture = capture if capture is not None else cv2.VideoCapture(camera)
-        if not self.capture.isOpened():
-            self.capture.release()
-            raise RuntimeError("Camera could not be opened")
         try:
+            if not self.capture.isOpened():
+                raise RuntimeError("Camera could not be opened")
             if self.detector is None:
                 options = mp.tasks.vision.HandLandmarkerOptions(
                     base_options=mp.tasks.BaseOptions(model_asset_buffer=payload),
@@ -60,23 +59,21 @@ class WebcamSource:
                             threading.Thread(target=self._infer, daemon=True)]
             for thread in self.threads:
                 thread.start()
-        except BaseException:
-            self.stop.set()
-            with self.condition:
-                self.condition.notify_all()
-            for thread in self.threads:
-                if thread.ident is not None:
-                    thread.join(timeout=5)
-            # Until capture starts, construction still owns the device.
-            if not self.threads or self.threads[0].ident is None:
-                self.capture.release()
-            if self.detector is not None and not any(t.is_alive() for t in self.threads):
-                self.detector.close()
+        except BaseException as exc:
+            try:
+                self.close()
+            except BaseException as cleanup:
+                exc.add_note(f"Webcam initialization cleanup also failed: {cleanup!r}; cause: {cleanup.__cause__!r}")
+                for note in getattr(cleanup.__cause__, "__notes__", ()):
+                    exc.add_note(note)
             raise
 
     def _fail(self, error):
         with self.condition:
-            self.error = error
+            if self.error is None:
+                self.error = error
+            else:
+                self.error.add_note(f"Additional webcam worker/cleanup failure: {error!r}")
             self.stop.set()
             self.condition.notify_all()
 
@@ -99,7 +96,10 @@ class WebcamSource:
             self._fail(exc)
         finally:
             # Never release OpenCV's native handle concurrently with read().
-            self.capture.release()
+            try:
+                self.capture.release()
+            except BaseException as exc:
+                self._fail(exc)
 
     def _infer(self):
         last_ms = -1
@@ -129,6 +129,8 @@ class WebcamSource:
 
     def read(self):
         with self.condition:
+            if self.closed:
+                raise RuntimeError("Webcam source is closed")
             if self.error is not None:
                 raise RuntimeError("Webcam worker failed") from self.error
             frame, self.latest = self.latest, None
@@ -144,8 +146,21 @@ class WebcamSource:
             self.condition.notify_all()
         deadline = time.monotonic() + timeout
         for thread in self.threads:
-            thread.join(timeout=max(0, deadline - time.monotonic()))
+            if thread.ident is not None:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
         if any(thread.is_alive() for thread in self.threads):
             raise RuntimeError("Camera/inference worker did not stop before timeout; resources remain owned by workers")
-        self.detector.close()
+        # Until the capture worker starts, construction still owns its handle.
+        if not self.threads or self.threads[0].ident is None:
+            try:
+                self.capture.release()
+            except BaseException as exc:
+                self._fail(exc)
+        if self.detector is not None:
+            try:
+                self.detector.close()
+            except BaseException as exc:
+                self._fail(exc)
         self.closed = True
+        if self.error is not None:
+            raise RuntimeError("Webcam worker or cleanup failed") from self.error
