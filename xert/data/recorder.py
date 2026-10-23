@@ -64,7 +64,7 @@ class RuntimeRecorder:
     retain a private staging directory and flushed journal, never a final dataset.
     ponytail: one episode per transaction; add session episode controls with P4 UI.
     """
-    def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime"):
+    def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None):
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
         self.output = Path(output).absolute()
         if self.output.exists() or self.output.is_symlink():
@@ -74,7 +74,8 @@ class RuntimeRecorder:
         if not isinstance(source, dict) or source.get("kind") not in ("scripted", "webcam", "recorded_human"):
             raise ValueError("Source provenance must declare scripted, webcam, or recorded_human")
         self.source = json.loads(json.dumps(source, allow_nan=False))
-        self.spec = load_spec(spec_path)
+        spec_bytes = Path(spec_path).read_bytes() if spec_bytes is None else spec_bytes
+        self.spec = load_spec(spec_path, contents=spec_bytes)
         if self.spec.control_hz != int(self.spec.control_hz):
             raise ValueError("LeRobot requires an integer control rate")
         self.features = _features(self.spec)
@@ -103,7 +104,7 @@ class RuntimeRecorder:
                              "missing_values": "Numeric zero is padding only where matching presence mask is false; journal retains null",
                              "timestamp": "LeRobot timestamp is derived frame_index/fps; use xert.times for measured stages",
                              "initial_state": {"q": self.previous.q.tolist(), "qd": self.previous.qd.tolist(), "t": self.previous.t},
-                             "spec_sha256": hashlib.sha256(Path(spec_path).read_bytes()).hexdigest()}
+                             "spec_sha256": hashlib.sha256(spec_bytes).hexdigest()}
             atomic_json(self.staging / "xert_recording.json", self.manifest)
             self.journal = (self.staging / "xert_frames.jsonl").open("x", encoding="utf-8")
         except BaseException as exc:

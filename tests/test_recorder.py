@@ -1,5 +1,6 @@
 """Optional actual LeRobot v3 integration; no camera or hardware access."""
 import gc
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,31 @@ from xert.data.recorder import RuntimeRecorder, TIMES, load_runtime_dataset
 from xert.spec import load_spec
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_scripted_recording_hashes_exact_inputs_despite_path_change(tmp_path, monkeypatch):
+    from scripts import record_scripted_runtime as script
+    spec_path, profile = tmp_path / "spec.yaml", tmp_path / "profile.json"
+    raw = json.loads((ROOT / "xert/spec/so101.yaml").read_text())
+    raw["model_path"] = str(load_spec(ROOT / "xert/spec/so101.yaml").model_path)
+    spec_path.write_text(json.dumps(raw))
+    profile.write_bytes((ROOT / "configs/teleop/so101.json").read_bytes())
+    spec_bytes, profile_bytes = spec_path.read_bytes(), profile.read_bytes()
+
+    def backend(spec):
+        spec_path.write_text("changed after parse")
+        profile.write_text("changed after parse")
+        return MuJoCoBackend(spec)
+
+    monkeypatch.setattr(script, "MuJoCoBackend", backend)
+    output = tmp_path / "recording"
+    record_scripted(spec_path, profile, output, frames=2)
+    manifest = json.loads((output / "xert_recording.json").read_text())
+    assert manifest["spec_sha256"] == hashlib.sha256(spec_bytes).hexdigest()
+    assert manifest["source"]["calibration"]["spec_sha256"] == manifest["spec_sha256"]
+    assert manifest["source"]["profile_sha256"] == hashlib.sha256(profile_bytes).hexdigest()
+    assert manifest["source"]["calibration"]["profile_sha256"] == manifest["source"]["profile_sha256"]
+    assert json.loads((output / "roundtrip.json").read_text())["frames"] == 2
 
 
 @pytest.mark.parametrize("robot", ["so101", "g1_upper", "leap_hand"])
