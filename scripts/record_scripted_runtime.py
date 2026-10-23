@@ -54,16 +54,19 @@ class ScriptedSource:
 
 
 def record_scripted(spec_path, profile, output, frames=12):
-    backend = MuJoCoBackend(load_spec(spec_path))
+    spec_bytes, profile_bytes = Path(spec_path).read_bytes(), Path(profile).read_bytes()
+    inputs = {"spec_bytes": spec_bytes, "profile_bytes": profile_bytes}
+    backend = MuJoCoBackend(load_spec(spec_path, contents=spec_bytes))
     clock = ScriptedClock()
     try:
-        calibration = create_calibration(spec_path, profile, scripted_frame(0, clock()), backend)
-        mapper = CalibratedMapper(spec_path, profile, calibration, backend)
+        calibration = create_calibration(spec_path, profile, scripted_frame(0, clock()), backend, **inputs)
+        mapper = CalibratedMapper(spec_path, profile, calibration, backend, **inputs)
         source = {"kind": "scripted", "clock": "scripted, not elapsed real time",
                   "generator": "scripts/record_scripted_runtime.py", "human_demonstrations": False,
-                  "calibration": calibration, "profile_sha256": hashlib.sha256(Path(profile).read_bytes()).hexdigest()}
+                  "calibration": calibration, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest()}
         with RuntimeRecorder(spec_path, backend.read_state(), output,
-                             task="Scripted motion recording round trip; task success not evaluated", source=source) as recorder:
+                             task="Scripted motion recording round trip; task success not evaluated", source=source,
+                             spec_bytes=spec_bytes) as recorder:
             records = run_loop(ScriptedSource(clock), backend, mapper, frames / backend.spec.control_hz,
                                clock=clock, sleep=clock.sleep, on_step=recorder)
         return records

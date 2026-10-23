@@ -31,6 +31,16 @@ def escape_pressed():
     return False  # Ctrl-C terminates through finally on every platform.
 
 
+def _close(resource):
+    primary = sys.exception()
+    try:
+        resource.close()
+    except BaseException as cleanup:
+        if primary is None:
+            raise
+        primary.add_note(f"Cleanup also failed: {type(cleanup).__name__}: {cleanup}")
+
+
 def execute(args):
     from xert.backends import MuJoCoBackend
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
@@ -44,8 +54,9 @@ def execute(args):
     interval = args.timeout if args.command == "calibrate" else args.duration
     if not math.isfinite(interval) or interval <= 0:
         raise ValueError("Duration/timeout must be finite and positive")
-    spec = load_spec(args.spec)
-    profile = load_profile(args.profile, spec)
+    spec_bytes, profile_bytes = args.spec.read_bytes(), args.profile.read_bytes()
+    spec = load_spec(args.spec, contents=spec_bytes)
+    profile = load_profile(args.profile, spec, contents=profile_bytes)
     model = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
     if hashlib.sha256(args.model.read_bytes()).hexdigest() != model["sha256"]:
         raise ValueError("Model checksum mismatch; run python -m scripts.fetch_hand_model")
@@ -61,7 +72,8 @@ def execute(args):
                     frame = source.read()
                     if (frame is not None and required_hands(profile) <= set(frame.hands) and
                             0 <= time.perf_counter() - frame.t_capture <= .2):
-                        calibration = create_calibration(args.spec, args.profile, frame, backend)
+                        calibration = create_calibration(args.spec, args.profile, frame, backend,
+                                                         spec_bytes=spec_bytes, profile_bytes=profile_bytes)
                         calibration.update(camera=args.camera, model_sha256=model["sha256"], mirrored=False)
                         args.output.parent.mkdir(parents=True, exist_ok=True)
                         with args.output.open("x", encoding="utf-8") as stream:
@@ -70,17 +82,22 @@ def execute(args):
                     time.sleep(.01)
                 raise RuntimeError("No fresh complete neutral hand pose observed before timeout")
             finally:
-                source.close()
+                _close(source)
         calibration_bytes = args.calibration.read_bytes()
         calibration = json.loads(calibration_bytes)
         if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
                 calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
             raise ValueError("Live run requires a matching, unmirrored webcam calibration")
-        mapper = CalibratedMapper(args.spec, args.profile, calibration, backend)
+        mapper = CalibratedMapper(args.spec, args.profile, calibration, backend,
+                                  spec_bytes=spec_bytes, profile_bytes=profile_bytes)
         provenance = source_provenance()
         config = {"embodiment": spec.name, "joint_names": list(spec.joint_names), "backend": "mujoco",
                   "source": "webcam", "camera": args.camera, "mirrored": False,
                   "spec": artifact_path(args.spec), "profile": artifact_path(args.profile),
+                  "spec_snapshot": artifact_path(args.output / "spec.yaml"),
+                  "profile_snapshot": artifact_path(args.output / "profile.json"),
+                  "spec_sha256": hashlib.sha256(spec_bytes).hexdigest(),
+                  "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": artifact_path(args.output / "calibration.json"),
                   "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
                   "duration_s": args.duration,
@@ -88,6 +105,8 @@ def execute(args):
                   "latency_endpoint": "host acquisition return to MuJoCo step completion; excludes sensor/driver buffering",
                   **provenance}
         args.output.mkdir(parents=True)
+        (args.output / "spec.yaml").write_bytes(spec_bytes)
+        (args.output / "profile.json").write_bytes(profile_bytes)
         with (args.output / "calibration.json").open("xb") as snapshot:
             snapshot.write(calibration_bytes)
         config_path, trace_path = args.output / "config.json", args.output / "trace.jsonl"
@@ -101,23 +120,25 @@ def execute(args):
                 # run_loop closes both resources, including exceptions/keyboard interruption.
                 records = run_loop(source, backend, mapper, args.duration, on_step=record, stop_requested=escape_pressed)
         finally:
-            source.close()
+            _close(source)
         if len(records) != math.ceil(args.duration * spec.control_hz):
             raise RuntimeError("Run stopped early; trace retained but no completed-run latency rows appended")
         summary = summarize(records)
         summary.update(captured=source.captured, inferred=source.inferred, capture_overwritten=source.overwritten)
         (args.output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        artifacts = [config_path, trace_path, args.output / "summary.json", args.output / "spec.yaml",
+                     args.output / "profile.json", args.output / "calibration.json"]
+        artifact_hashes = {artifact_path(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in artifacts}
         for percentile in (50, 95):
             row = new_row(**provenance, slice="P3.5", experiment="webcam_host_latency_v1", backend="mujoco",
                           embodiment=spec.name, metric=f"latency_p{percentile}_ms", value=summary[f"p{percentile}_ms"],
                           ci95=None, n=summary["n"], seeds={"train": [], "eval": []},
                           config_path=artifact_path(config_path),
-                          artifact_paths=[artifact_path(trace_path), artifact_path(args.output / "summary.json"),
-                                          artifact_path(args.spec), artifact_path(args.profile),
-                                          artifact_path(args.output / "calibration.json")],
-                          notes="Unique valid webcam frames only. Host acquisition-return to simulator step completion; "
+                          artifact_paths=list(artifact_hashes), artifact_sha256=artifact_hashes,
+                          notes="Unique fresh valid applied webcam frames only; conditional on successful application. "
+                                "Host acquisition-return to simulator step completion; "
                                 "sensor exposure/driver latency excluded. No motor, tracking-accuracy or task-success claim.")
             append_row(row)
             print(json.dumps(row))
     finally:
-        backend.close()
+        _close(backend)

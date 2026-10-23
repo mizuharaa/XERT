@@ -193,7 +193,7 @@ def test_latency_snapshots_same_calibration_bytes_that_mapper_received(tmp_path,
     calibration_path = tmp_path / "neutral.json"
     original = json.dumps(neutral, indent=3).encode()
     calibration_path.write_bytes(original)
-    def mapper(spec, profile, calibration, backend):
+    def mapper(spec, profile, calibration, backend, **kwargs):
         assert calibration == neutral
         calibration_path.write_bytes(b"changed after the single read")
         return None

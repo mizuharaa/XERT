@@ -36,15 +36,20 @@ def hand_features(hand):
             "pinch": np.linalg.norm(world[4] - world[8]) / width}
 
 
-def load_profile(path, spec):
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+def load_profile(path, spec, *, contents=None):
+    raw = json.loads((Path(path).read_bytes() if contents is None else contents).decode("utf-8"))
     if not isinstance(raw, dict) or raw.get("mode") not in ("pose", "curls"):
         raise ValueError("Teleop profile mode must be pose or curls")
     if raw["mode"] == "pose":
         if set(raw) != {"mode", "hands", "axes", "gains", "orientation", "pinch_hand", "pinch_range"}:
             raise ValueError("Unexpected pose profile fields")
-        if set(raw["hands"]) != set(spec.mapping) or any(h not in ("left", "right") for h in raw["hands"].values()):
+        if (not isinstance(raw["hands"], dict) or set(raw["hands"]) != set(spec.mapping)
+                or any(h not in ("left", "right") for h in raw["hands"].values())):
             raise ValueError("Pose hands must map every spec source to left/right")
+        def numeric(value):
+            return all(numeric(item) for item in value) if isinstance(value, list) else type(value) in (int, float)
+        if any(not numeric(raw[key]) for key in ("axes", "gains", "pinch_range")):
+            raise ValueError("Pose scales and axes must contain numbers, not strings or booleans")
         axes = np.asarray(raw["axes"], dtype=float)
         gains = np.asarray(raw["gains"], dtype=float)
         if (axes.shape != (3, 3) or not np.isfinite(axes).all() or
@@ -77,15 +82,17 @@ def required_hands(profile):
     return set(profile["hands"].values()) if profile["mode"] == "pose" else {profile["hand"]}
 
 
-def create_calibration(spec_path, profile_path, frame, backend):
-    profile = load_profile(profile_path, backend.spec)
+def create_calibration(spec_path, profile_path, frame, backend, *, spec_bytes=None, profile_bytes=None):
+    spec_bytes = Path(spec_path).read_bytes() if spec_bytes is None else spec_bytes
+    profile_bytes = Path(profile_path).read_bytes() if profile_bytes is None else profile_bytes
+    profile = load_profile(profile_path, backend.spec, contents=profile_bytes)
     if not required_hands(profile) <= set(frame.hands):
         raise ValueError("Neutral calibration requires every mapped hand")
     features = {name: hand_features(frame.hands[name]) for name in required_hands(profile)}
     return {"version": 1, "source": frame.source, "frame_sequence": frame.sequence,
             "t_capture": frame.t_capture, "image_size": list(frame.image_size),
-            "spec_sha256": hashlib.sha256(Path(spec_path).read_bytes()).hexdigest(),
-            "profile_sha256": hashlib.sha256(Path(profile_path).read_bytes()).hexdigest(),
+            "spec_sha256": hashlib.sha256(spec_bytes).hexdigest(),
+            "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
             "hands": {name: {"xy": f["xy"].tolist(), "palm": float(f["palm"]),
                               "basis": f["basis"].tolist(),
                               "curls": {k: v.tolist() for k, v in f["curls"].items()}}
@@ -97,12 +104,18 @@ def create_calibration(spec_path, profile_path, frame, backend):
 
 
 class CalibratedMapper:
-    def __init__(self, spec_path, profile_path, calibration, backend):
-        self.profile = load_profile(profile_path, backend.spec)
+    def __init__(self, spec_path, profile_path, calibration, backend, *, spec_bytes=None, profile_bytes=None):
+        spec_bytes = Path(spec_path).read_bytes() if spec_bytes is None else spec_bytes
+        profile_bytes = Path(profile_path).read_bytes() if profile_bytes is None else profile_bytes
+        self.profile = load_profile(profile_path, backend.spec, contents=profile_bytes)
         self.spec, self.calibration, self.backend = backend.spec, calibration, backend
-        for key, path in (("spec_sha256", spec_path), ("profile_sha256", profile_path)):
-            if calibration.get(key) != hashlib.sha256(Path(path).read_bytes()).hexdigest():
+        for key, contents in (("spec_sha256", spec_bytes), ("profile_sha256", profile_bytes)):
+            if calibration.get(key) != hashlib.sha256(contents).hexdigest():
                 raise ValueError("Calibration spec/profile checksum mismatch")
+        image_size = calibration.get("image_size")
+        if (not isinstance(image_size, (list, tuple)) or len(image_size) != 2
+                or any(type(value) is not int or value <= 0 for value in image_size)):
+            raise ValueError("Calibration image_size must contain positive integer width and height")
         if calibration.get("version") != 1 or not required_hands(self.profile) <= set(calibration.get("hands", {})):
             raise ValueError("Calibration is missing required hands/version")
         # Validate persisted geometry by running the same mapping checks before live use.

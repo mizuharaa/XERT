@@ -26,11 +26,11 @@ class EmbodimentSpec:
         return mujoco.MjModel.from_xml_path(str(self.model_path))
 
 
-def load_spec(path: str | Path) -> EmbodimentSpec:
+def load_spec(path: str | Path, *, contents: bytes | None = None) -> EmbodimentSpec:
     """Load JSON-form YAML; reject ambiguous YAML syntax rather than guessing."""
     path = Path(path).resolve()
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads((path.read_bytes() if contents is None else contents).decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError("Specs use the JSON-compatible YAML subset (quoted keys, no tags)") from exc
     fields = {"name", "model_path", "joint_names", "position_limits", "velocity_limits",
