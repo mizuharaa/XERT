@@ -81,6 +81,8 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                 recorder._abort_preserving(exc)
             raise
         result = end[0] if end else "stop"
+        while result != "quit" and keys() is not None:
+            pass  # Drop keys buffered while the episode ended, so none starts the next one.
         if result == "discard":
             recorder.abort()
             shutil.rmtree(recorder.work)
@@ -103,6 +105,8 @@ def execute(args):
     from xert.retarget.calibrate import CalibratedMapper, load_profile
     from xert.sources.webcam_mediapipe import WebcamSource
     from .cli import _calibration, _close, _hand_model
+    if sys.platform != "win32":
+        raise RuntimeError("Teleop keys use the Windows console; no camera opened")
     if args.output.exists():
         raise ValueError("Output already exists; choose a fresh evidence path")
     spec_bytes, profile_bytes = args.spec.read_bytes(), args.profile.read_bytes()
@@ -110,6 +114,8 @@ def execute(args):
     profile = load_profile(args.profile, spec, contents=profile_bytes)
     model = _hand_model(args)
     calibration_bytes, calibration = _calibration(args, model)
+    if calibration.get("neutral_pose") != "bench_reset":
+        raise ValueError("Teleop needs a bench-reset neutral calibration: xert calibrate --bench")
 
     def make_mapper(backend):
         return CalibratedMapper(args.spec, args.profile, calibration, backend,

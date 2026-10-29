@@ -5,18 +5,20 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import mujoco
 import numpy as np
 import pytest
 
 from scripts.record_scripted_runtime import ScriptedClock, ScriptedSource, scripted_frame
-from xert.backends import MuJoCoBackend
+from xert.backends.bench import BenchBackend
 from xert.retarget.calibrate import CalibratedMapper, create_calibration
 from xert.runtime import teleop
+from xert.sources import MotionFrame
 from xert.spec import load_spec
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "xert/spec/xlerobot_left.yaml"
-PROFILE = ROOT / "configs/teleop/so101.json"
+PROFILE = ROOT / "configs/teleop/xlerobot_bench.json"
 SCRIPTED = {"kind": "scripted", "human_demonstrations": False, "generator": "tests/test_teleop.py"}
 
 
@@ -28,36 +30,66 @@ def test_key_mapping():
 
 
 def calibration(clock):
-    backend = MuJoCoBackend(load_spec(SPEC))  # What `xert calibrate --spec xlerobot_left.yaml` uses.
-    try:
-        return create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), backend)
-    finally:
-        backend.close()
+    # What `xert calibrate --bench` does: neutral grasp = bench reset pose.
+    return create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), BenchBackend(load_spec(SPEC), 0))
 
 
 def session(tmp_path, keys, make_mapper=None):
+    """Keys are exact: every poll consumes one entry and each sequence ends with Escape at idle."""
     clock = ScriptedClock()
     neutral = calibration(clock)
     make_mapper = make_mapper or (lambda backend: CalibratedMapper(SPEC, PROFILE, neutral, backend))
     pending = iter(keys)
     kept = teleop.run_session(ScriptedSource(clock), SPEC, tmp_path / "session", make_mapper, provenance=SCRIPTED,
-                              keys=lambda: next(pending, "\x1b"), clock=clock, sleep=clock.sleep)
+                              keys=lambda: next(pending), clock=clock, sleep=clock.sleep)
+    assert next(pending, "done") == "done"
     return kept, tmp_path / "session"
 
 
-def test_discard_writes_nothing_and_estop_never_publishes(tmp_path):
+def test_bench_profile_reaches_block_and_tray_from_modest_hand_motion():
+    profile = json.loads(PROFILE.read_text())
+    bench = BenchBackend(load_spec(SPEC), 0)
+    neutral = calibration(ScriptedClock())
+    mapper = CalibratedMapper(SPEC, PROFILE, neutral, bench)
+    origin = np.asarray(neutral["sites"]["grasp"]["position"])
+    np.testing.assert_allclose(origin, bench.data.site("grasp").xpos)  # No reset-to-neutral sweep.
+    base, fk = scripted_frame(0, 1.).hands["right"], mujoco.MjData(bench.model)
+    block = bench.data.body("block").xpos.copy()
+    for name, target in (("block", block), ("above block", block + [0, 0, .06]),
+                         ("tray", bench.model.body("tray").pos + [0, 0, .04])):
+        image_x, image_y, depth = np.asarray(profile["axes"]).T @ (target - origin) / profile["gains"]
+        scale = 1 / (1 + depth)  # Apparent palm-size change that the depth proxy needs.
+        assert abs(image_x) < .25 and abs(image_y) < .35 and .7 < scale < 1.5
+        image = base.image[0] + (base.image - base.image[0]) * scale + [image_x, image_y, 0]
+        hand = replace(base, image=image)
+        q = mapper.map(MotionFrame(1, 1., 1., {"left": hand, "right": hand}, "scripted", (640, 480)))
+        fk.qpos[:] = bench.data.qpos
+        fk.qpos[bench.env.qids] = q
+        mujoco.mj_forward(bench.model, fk)
+        error = np.linalg.norm(fk.site("grasp").xpos - target)
+        print(f"{name}: image dx={image_x:+.3f} dy={image_y:+.3f} palm x{scale:.2f} -> IK error {error:.1e} m")
+        assert error < 1e-3
+
+
+def test_discard_writes_nothing_and_estop_never_publishes(tmp_path, monkeypatch):
     pytest.importorskip("lerobot")
-    kept, output = session(tmp_path, [" ", None, "d", " ", None, "\x1b"])
+    from xert.runtime import loop
+    runs, real = [], loop.run_loop
+    monkeypatch.setattr(loop, "run_loop", lambda *a, **k: runs.append(real(*a, **k)) or runs[-1])
+    kept, output = session(tmp_path, [" ", None, "d", None, " ", None, "\x1b"])
     assert kept == []
     staging = [path for path in output.iterdir()]
     assert len(staging) == 1 and staging[0].name.startswith(".xert-recording-")  # Escape: recoverable journal.
-    assert json.loads((staging[0] / "dataset/xert_recording.json").read_text())["status"] == "aborted"
+    manifest = json.loads((staging[0] / "dataset/xert_recording.json").read_text())
+    assert manifest["status"] == "aborted" and manifest["source"]["bench_seed"] == 0  # Discard retries seed 0.
+    assert runs[-1][-1]["phase"] == "estop" and runs[-1][-2]["phase"] != "estop"
 
 
 def test_stop_finalises_episode_that_round_trips(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset, verify_recording
-    kept, output = session(tmp_path, [" ", None, None, " ", " ", " "])
+    # The Space buffered as episode 0 ends is drained; otherwise episode 1 would record 2 frames.
+    kept, output = session(tmp_path, [" ", None, None, " ", " ", None, " ", " ", None, "\x1b"])
     assert [path.name for path in kept] == ["episode_000000", "episode_000001"]
     assert sorted(path.name for path in output.iterdir()) == ["episode_000000", "episode_000001"]
     assert verify_recording(kept[0])["frames"] == 3 and verify_recording(kept[1])["frames"] == 1
@@ -80,7 +112,7 @@ def test_bench_contact_success_reaches_next_success(tmp_path):
         return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
                                (limits[:, 1] - limits[:, 0]))
 
-    kept, _ = session(tmp_path, [" "] + [None] * 600, expert)
+    kept, _ = session(tmp_path, [" "] + [None] * 600 + ["\x1b"], expert)
     manifest = json.loads((kept[0] / "xert_recording.json").read_text())
     assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
     dataset = load_runtime_dataset(kept[0])
@@ -97,20 +129,37 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
     manifest = tmp_path / "assets/mediapipe/SOURCE.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(json.dumps({"sha256": hashlib.sha256(b"mock").hexdigest()}))
-    neutral = calibration(ScriptedClock())
-    neutral.update(source="webcam", camera=0, model_sha256=hashlib.sha256(b"mock").hexdigest(), mirrored=True)
-    path = tmp_path / "calibration.json"
-    path.write_text(json.dumps(neutral))
     monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli.time, "sleep", lambda _: None)
+    monkeypatch.setattr(cli.time, "perf_counter", lambda: 100.)
+    closed, seen = [], {}
+
+    def camera(*args, **kwargs):
+        return SimpleNamespace(read=lambda: replace(scripted_frame(1, 100.), source="webcam"),
+                               close=lambda: closed.append(True))
+
+    monkeypatch.setattr(webcam_mediapipe, "WebcamSource", camera)
+    path = tmp_path / "calibration.json"
+    cli.execute(SimpleNamespace(command="calibrate", bench=True, spec=SPEC, profile=PROFILE, model=model, camera=0,
+                                output=path, timeout=1.))
+    neutral = json.loads(path.read_text())
+    assert neutral["neutral_pose"] == "bench_reset"
+    np.testing.assert_allclose(neutral["sites"]["grasp"]["position"],
+                               BenchBackend(load_spec(SPEC), 0).data.site("grasp").xpos)
     args = SimpleNamespace(command="teleop", spec=SPEC, profile=PROFILE, model=model, camera=0,
                            calibration=path, output=tmp_path / "out")
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: pytest.fail("Camera opened"))
-    with pytest.raises(ValueError, match="unmirrored"):
+    for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench")):
+        path.write_text(json.dumps({**neutral, **bad}))
+        with pytest.raises(ValueError, match=message):
+            cli.execute(args)
+    path.write_text(json.dumps(neutral))
+    monkeypatch.setattr(teleop.sys, "platform", "linux")
+    with pytest.raises(RuntimeError, match="Windows console"):
         cli.execute(args)
-    path.write_text(json.dumps({**neutral, "mirrored": False}))
-    closed, seen = [], {}
-    monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: SimpleNamespace(
-        read=lambda: replace(scripted_frame(1, 100.), source="webcam"), close=lambda: closed.append(True)))
+    monkeypatch.setattr(teleop.sys, "platform", "win32")
+    closed.clear()
+    monkeypatch.setattr(webcam_mediapipe, "WebcamSource", camera)
     monkeypatch.setattr(teleop, "run_session", lambda source, spec, output, make_mapper, **kw: seen.update(kw))
     cli.execute(args)
     assert closed and seen["provenance"]["kind"] == "webcam" and seen["provenance"]["mirrored"] is False
