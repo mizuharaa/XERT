@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def add_commands(commands):
-    for name in ("calibrate", "latency"):
+    for name in ("calibrate", "latency", "teleop"):
         parser = commands.add_parser(name, help="Explicitly open the selected webcam for simulation controls")
         parser.add_argument("--spec", type=Path, required=True)
         parser.add_argument("--profile", type=Path, required=True)
@@ -21,6 +21,7 @@ def add_commands(commands):
             parser.add_argument("--timeout", type=float, default=30)
         else:
             parser.add_argument("--calibration", type=Path, required=True)
+        if name == "latency":
             parser.add_argument("--duration", type=float, default=300)
 
 
@@ -41,7 +42,26 @@ def _close(resource):
         primary.add_note(f"Cleanup also failed: {type(cleanup).__name__}: {cleanup}")
 
 
+def _hand_model(args):
+    model = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
+    if hashlib.sha256(args.model.read_bytes()).hexdigest() != model["sha256"]:
+        raise ValueError("Model checksum mismatch; run python -m scripts.fetch_hand_model")
+    return model
+
+
+def _calibration(args, model):
+    calibration_bytes = args.calibration.read_bytes()
+    calibration = json.loads(calibration_bytes)
+    if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
+            calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
+        raise ValueError("Live run requires a matching, unmirrored webcam calibration")
+    return calibration_bytes, calibration
+
+
 def execute(args):
+    if args.command == "teleop":
+        from .teleop import execute as teleop
+        return teleop(args)
     from xert.backends import MuJoCoBackend
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
     from xert.retarget.calibrate import CalibratedMapper, create_calibration, load_profile, required_hands
@@ -57,9 +77,7 @@ def execute(args):
     spec_bytes, profile_bytes = args.spec.read_bytes(), args.profile.read_bytes()
     spec = load_spec(args.spec, contents=spec_bytes)
     profile = load_profile(args.profile, spec, contents=profile_bytes)
-    model = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
-    if hashlib.sha256(args.model.read_bytes()).hexdigest() != model["sha256"]:
-        raise ValueError("Model checksum mismatch; run python -m scripts.fetch_hand_model")
+    model = _hand_model(args)
     backend = MuJoCoBackend(spec)
     try:
         if args.command == "calibrate":
@@ -83,11 +101,7 @@ def execute(args):
                 raise RuntimeError("No fresh complete neutral hand pose observed before timeout")
             finally:
                 _close(source)
-        calibration_bytes = args.calibration.read_bytes()
-        calibration = json.loads(calibration_bytes)
-        if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
-                calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
-            raise ValueError("Live run requires a matching, unmirrored webcam calibration")
+        calibration_bytes, calibration = _calibration(args, model)
         mapper = CalibratedMapper(args.spec, args.profile, calibration, backend,
                                   spec_bytes=spec_bytes, profile_bytes=profile_bytes)
         provenance = source_provenance()
