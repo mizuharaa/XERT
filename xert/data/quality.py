@@ -28,15 +28,14 @@ def episode_metrics(frames, fps):
     action = np.asarray(frames["action"], dtype=np.float64)
     times, present = frames["xert.times"], frames["xert.times_present"]
     seen = frames["xert.frame_sequence_present"] & present[:, CAPTURE]
-    # Held frames repeat their sequence; first occurrence = tick the source frame arrived.
-    sequences, first = np.unique(frames["xert.frame_sequence"][seen], return_index=True)
+    sequences = np.unique(frames["xert.frame_sequence"][seen])  # Held frames repeat their sequence.
     confidence = frames["xert.tracking_confidence"][frames["xert.tracking_confidence_present"]]
     handedness = frames["xert.handedness_scores"][frames["xert.handedness_present"]]
     second = np.diff(action, n=2, axis=0)
     return {"frames": len(action), "duration_s": len(action) / fps,
             "action_jitter": float(np.sqrt(np.mean(second ** 2))) if len(second) else None,
             "max_command_gap_s": _max_gap(times[:, COMMAND]),
-            "max_capture_gap_s": _max_gap(times[seen][first, CAPTURE]),
+            "max_capture_gap_s": _max_gap(times[seen, CAPTURE]),
             # ponytail: drops before the first / after the last applied frame are unobservable here.
             "dropped_frame_fraction": (1 - len(sequences) / (sequences[-1] - sequences[0] + 1)
                                        if len(sequences) else None),
