@@ -149,9 +149,15 @@ def main():
             validate_row(row)
             rows.append(row)
         print(json.dumps({k: summary[k] for k in ("embodiment", "n", "p50_mm", "p95_mm")}))
-    # Rows are appended only after every robot finished, and only for real webcam recordings.
-    if clip["source"] != "webcam":
-        print(f"Clip source is {clip['source']!r}, not a webcam recording: artifacts written, no ledger rows appended.")
+    # Rows are appended only after every robot finished, and only for real webcam recordings: the label alone is
+    # hand-editable, so also require the pinned model hash and the fields only record-motion writes.
+    pinned = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())["sha256"]
+    recorded = (clip["source"] == "webcam" and isinstance(clip.get("model"), dict) and
+                clip["model"].get("sha256") == pinned and
+                all(key in clip for key in ("camera", "git_commit", "captured", "inferred", "capture_overwritten")))
+    if not recorded:
+        print(f"Clip (source {clip['source']!r}) is not a record-motion webcam recording with the pinned model: "
+              "artifacts written, no ledger rows appended.")
         return
     for row in rows:
         append_row(row)

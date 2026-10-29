@@ -5,6 +5,7 @@ import sys
 
 import mujoco
 import numpy as np
+import pytest
 
 from test_motion_file import scripted_clip
 from xert.eval.ledger import ledger_path
@@ -48,3 +49,19 @@ def test_scripted_clip_scores_every_robot_but_refuses_ledger(tmp_path, monkeypat
     mujoco.mj_kinematics(model, data)
     for site, target in last["target"].items():
         assert np.allclose(target, data.site(site).xpos)
+
+
+@pytest.mark.parametrize("pinned_model", [False, True])
+def test_relabelled_scripted_clip_is_refused(tmp_path, monkeypatch, capsys, pinned_model):
+    from scripts.measure_retarget import main
+    path = scripted_clip(tmp_path, [(.01, .1)] * 2)
+    clip = json.loads(path.read_text())
+    clip["source"] = "webcam"  # forged label; recorder-only fields stay absent
+    if pinned_model:
+        clip["model"] = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
+    path.write_text(json.dumps(clip))
+    monkeypatch.setattr(sys, "argv", ["measure_retarget", "--clip", str(path), "--output", str(tmp_path / "run"),
+                                      "--robots", "so101"])
+    main()
+    assert "no ledger rows appended" in capsys.readouterr().out
+    assert not ledger_path().exists()
