@@ -11,8 +11,13 @@ def main():
     ledger = commands.add_parser("ledger")
     ledger.add_subparsers(dest="operation", required=True).add_parser("show")
     from .runtime.cli import add_commands, execute
+    from .data import quality
     add_commands(commands)
+    quality.add_command(commands)
     args = parser.parse_args()
+    if args.command == "quality":
+        quality.execute(args)
+        return
     if args.command != "ledger":
         execute(args)
         return
