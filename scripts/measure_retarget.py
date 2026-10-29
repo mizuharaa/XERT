@@ -90,7 +90,8 @@ def measure(robot, frames, output):
                     for site, value in error.items():
                         errors.setdefault(site, []).append(value)
                     result = {"target": {s: p.tolist() for s, p in wanted.items()},
-                              "achieved": {s: p.tolist() for s, p in achieved.items()}, "error_mm": error}
+                              "achieved": {s: p.tolist() for s, p in achieved.items()}, "error_mm": error,
+                              "requested_q": requested["q"].tolist()}
                 trace.write(json.dumps({**record, "retarget": result}, allow_nan=False) + "\n")
 
             duration = frames[-1].t_landmarks - frames[0].t_capture + 1 / spec.control_hz
