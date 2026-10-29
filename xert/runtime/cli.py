@@ -19,6 +19,8 @@ def add_commands(commands):
         parser.add_argument("--output", type=Path, required=True)
         if name == "calibrate":
             parser.add_argument("--timeout", type=float, default=30)
+            parser.add_argument("--bench", action="store_true",
+                                help="Neutral pose = pick-and-place bench reset pose (required by teleop)")
         else:
             parser.add_argument("--calibration", type=Path, required=True)
         if name == "latency":
@@ -63,6 +65,7 @@ def execute(args):
         from .teleop import execute as teleop
         return teleop(args)
     from xert.backends import MuJoCoBackend
+    from xert.backends.bench import BenchBackend
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
     from xert.retarget.calibrate import CalibratedMapper, create_calibration, load_profile, required_hands
     from xert.sources.webcam_mediapipe import WebcamSource
@@ -78,7 +81,8 @@ def execute(args):
     spec = load_spec(args.spec, contents=spec_bytes)
     profile = load_profile(args.profile, spec, contents=profile_bytes)
     model = _hand_model(args)
-    backend = MuJoCoBackend(spec)
+    bench = getattr(args, "bench", False)
+    backend = BenchBackend(spec, 0) if bench else MuJoCoBackend(spec)
     try:
         if args.command == "calibrate":
             print("Hold the mapped hand(s) in a comfortable neutral pose. Capture begins after a short countdown.", flush=True)
@@ -92,7 +96,8 @@ def execute(args):
                             0 <= time.perf_counter() - frame.t_capture <= .2):
                         calibration = create_calibration(args.spec, args.profile, frame, backend,
                                                          spec_bytes=spec_bytes, profile_bytes=profile_bytes)
-                        calibration.update(camera=args.camera, model_sha256=model["sha256"], mirrored=False)
+                        calibration.update(camera=args.camera, model_sha256=model["sha256"], mirrored=False,
+                                           neutral_pose="bench_reset" if bench else "spec_rest")
                         args.output.parent.mkdir(parents=True, exist_ok=True)
                         with args.output.open("x", encoding="utf-8") as stream:
                             json.dump(calibration, stream, indent=2, allow_nan=False)
