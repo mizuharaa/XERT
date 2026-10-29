@@ -29,6 +29,7 @@ def test_scripted_clip_scores_every_robot_but_refuses_ledger(tmp_path, monkeypat
         scored = [row for row in rows if row["retarget"] is not None]
         assert {row["source"] for row in scored} == {"scripted"}
         assert min(row["frame_sequence"] for row in scored) > summary["calibration_frame_sequence"]
+        assert summary["neutral_offset_s"] == 0
         # Known fixture: each error is the distance between the stored target and achieved site.
         errors = []
         for row in scored:
@@ -65,3 +66,16 @@ def test_relabelled_scripted_clip_is_refused(tmp_path, monkeypatch, capsys, pinn
     main()
     assert "no ledger rows appended" in capsys.readouterr().out
     assert not ledger_path().exists()
+
+
+def test_neutral_more_than_two_seconds_in_is_refused(tmp_path, monkeypatch):
+    from scripts.measure_retarget import main
+    path = scripted_clip(tmp_path, [(0, 0)] * 64)
+    clip = json.loads(path.read_text())
+    for f in clip["frames"][:64]:  # hands first appear at frame 64, 2.13 s after the first capture
+        f["hands"] = {}
+    path.write_text(json.dumps(clip))
+    monkeypatch.setattr(sys, "argv", ["measure_retarget", "--clip", str(path), "--output", str(tmp_path / "run"),
+                                      "--robots", "so101"])
+    with pytest.raises(ValueError, match="2.13 s into the clip"):
+        main()

@@ -26,7 +26,7 @@ TARGETS = {
              "mapper's requested joint vector at the fingertip sites. This is NOT human fingertip position error.",
 }
 COMMON = ("Per unique applied frame, measured after its first MuJoCo control step, pooled over sites {sites}. "
-          "Neutral = first clip frame showing every mapped hand (excluded). Targets are neutral-relative control "
+          "Neutral = first clip frame showing every mapped hand ({offset:.3f} s after clip start; excluded). Targets are neutral-relative control "
           "coordinates (image XY, palm-size depth proxy), not metric human motion. Error includes safety limiting, "
           "one-step servo lag and steady-state servo sag under gravity. Simulated-time replay: no latency, "
           "task-success or hardware claim.")
@@ -56,6 +56,10 @@ def measure(robot, frames, output):
         neutral = next((f for f in frames if required_hands(profile) <= set(f.hands)), None)
         if neutral is None:
             raise ValueError(f"Clip never shows every hand {robot} maps; cannot calibrate")
+        neutral_offset = neutral.t_capture - frames[0].t_capture
+        if neutral_offset > 2:
+            raise ValueError(f"First frame showing every hand {robot} maps is {neutral_offset:.2f} s into the clip, "
+                             "likely mid-motion; hold neutral at the start and re-record")
         calibration = create_calibration(spec_path, profile_path, neutral, backend, **inputs)
         mapper = CalibratedMapper(spec_path, profile_path, calibration, backend, **inputs)
         scratch = mujoco.MjData(backend.model)
@@ -107,7 +111,7 @@ def measure(robot, frames, output):
                "p95_mm": float(np.percentile(pooled, 95)), "max_mm": float(max(pooled)),
                "sites": {s: {"n": len(v), "p50_mm": float(np.percentile(v, 50)), "p95_mm": float(np.percentile(v, 95))}
                          for s, v in errors.items()},
-               "calibration_frame_sequence": neutral.sequence, "clip_frames": len(frames),
+               "calibration_frame_sequence": neutral.sequence, "neutral_offset_s": neutral_offset, "clip_frames": len(frames),
                "replay_skipped_frames": source.skipped, "ticks": len(records),
                "clamped_ticks": sum(r["clamped"] for r in records), "clock": "simulated time"}
     (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -145,7 +149,7 @@ def main():
                           value=summary[f"p{percentile}_mm"], ci95=None, n=summary["n"],
                           seeds={"train": [], "eval": []}, config_path=artifact_path(config_path),
                           artifact_paths=list(hashes), artifact_sha256=hashes,
-                          notes=TARGETS[summary["mode"]] + " " + COMMON.format(sites=", ".join(summary["sites"])))
+                          notes=TARGETS[summary["mode"]] + " " + COMMON.format(sites=", ".join(summary["sites"]), offset=summary["neutral_offset_s"]))
             validate_row(row)
             rows.append(row)
         print(json.dumps({k: summary[k] for k in ("embodiment", "n", "p50_mm", "p95_mm")}))
