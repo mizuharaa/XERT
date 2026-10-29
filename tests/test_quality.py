@@ -99,10 +99,33 @@ def test_cli_on_scripted_recording_refuses_ledger(tmp_path, monkeypatch):
     manifest = json.loads((dataset / "xert_recording.json").read_text())
     manifest["source"]["kind"] = "recorded_human"
     (dataset / "xert_recording.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=r"frame sources \['scripted'\] conflict"):
+        run_cli(monkeypatch, "--dataset", dataset, "--output", tmp_path / "conflict", "--ledger")
+    assert not ledger_path().exists() and not (tmp_path / "conflict").exists()
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    for path in (dataset / "data").rglob("*.parquet"):
+        table = pq.read_table(path)
+        relabelled = pa.array([value and "recorded_human" for value in table["xert.source"].to_pylist()])
+        pq.write_table(table.set_column(table.schema.get_field_index("xert.source"), "xert.source", relabelled), path)
     run_cli(monkeypatch, "--dataset", dataset, "--output", tmp_path / "human", "--ledger")
     rows = read_rows()
+    assert all(any(path.endswith("xert_recording.json") for path in row["artifact_sha256"]) for row in rows)
     assert ledger_path() == tmp_path / "results/ledger.jsonl"  # conftest isolation, never the real ledger.
     assert {row["metric"] for row in rows} == {f"{name}_median" for name in (
         "duration_s", "action_jitter", "max_command_gap_s", "max_capture_gap_s", "dropped_frame_fraction",
         "mean_handedness_score", "clamp_count")}
     assert all(row["slice"] == "P5.1" and row["n"] == 1 for row in rows)
+
+
+def test_cli_aggregates_session_of_episode_recordings(tmp_path, monkeypatch):
+    pytest.importorskip("lerobot")
+    from scripts.record_scripted_runtime import record_scripted
+    session = tmp_path / "session"
+    for name, frames in (("episode_000000", 3), ("episode_000001", 4)):
+        record_scripted(ROOT / "xert/spec/so101.yaml", ROOT / "configs/teleop/so101.json", session / name, frames)
+    run_cli(monkeypatch, "--dataset", session, "--output", tmp_path / "quality")
+    report = json.loads((tmp_path / "quality/metrics.json").read_text())
+    assert [(row["recording"], row["frames"]) for row in report["episodes"]] == [
+        ("episode_000000", 3), ("episode_000001", 4)]
+    assert report["distributions"]["frames"]["n"] == 2

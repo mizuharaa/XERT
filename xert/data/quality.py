@@ -47,10 +47,12 @@ def episode_metrics(frames, fps):
 
 
 def dataset_metrics(root, repo_id="xert/runtime"):
+    """Return (per-episode rows, set of non-empty per-frame xert.source values)."""
     from xert.data.recorder import load_runtime_dataset
     dataset = load_runtime_dataset(root, repo_id)
     try:
         batch = dataset.hf_dataset[:]
+        sources = set(batch["xert.source"]) - {""}
         columns = {key: np.stack([np.asarray(value) for value in values])
                    for key, values in batch.items() if not isinstance(values[0], str)}
         fps = dataset.fps
@@ -62,9 +64,9 @@ def dataset_metrics(root, repo_id="xert/runtime"):
     rows = []
     for episode in np.unique(columns["episode_index"]):
         mask = columns["episode_index"] == episode
-        rows.append({"episode_index": int(episode),
+        rows.append({"recording": Path(root).name, "episode_index": int(episode),
                      **episode_metrics({key: value[mask] for key, value in columns.items()}, fps)})
-    return rows
+    return rows, sources
 
 
 def distributions(rows):
@@ -99,7 +101,8 @@ def verdict(metrics, thresholds):
 
 def add_command(commands):
     parser = commands.add_parser("quality", help="Per-episode gate metrics for a runtime recording")
-    parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--dataset", type=Path, required=True,
+                        help="A recording, or a P4.1 session directory of episode_* recordings")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ledger", action="store_true", help="Append median rows; human-source data only")
 
@@ -108,12 +111,27 @@ def execute(args):
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
     if args.output.exists():
         raise ValueError("Output already exists; choose a fresh evidence path")
-    manifest_path = args.dataset / "xert_recording.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    kind = manifest["source"]["kind"]
+    root = args.dataset
+    recordings = [root] if (root / "xert_recording.json").exists() else sorted(root.glob("episode_*"))
+    if not recordings:
+        raise ValueError("Dataset is neither a recording nor a session of episode_* recordings")
+    manifests = [path / "xert_recording.json" for path in recordings]
+    identity = set()
+    for path in manifests:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        identity.add((manifest["source"]["kind"], manifest["backend"], manifest["embodiment"]))
+    if len(identity) != 1:
+        raise ValueError(f"Recordings mix source kind, backend or embodiment: {sorted(identity)}")
+    [(kind, backend, embodiment)] = identity
     if args.ledger and kind not in HUMAN_SOURCES:
         raise ValueError(f"Refusing ledger rows for {kind!r} data; only {HUMAN_SOURCES} count as demonstrations")
-    rows = dataset_metrics(args.dataset)
+    rows, sources = [], set()
+    for path in recordings:
+        recording_rows, recording_sources = dataset_metrics(path)
+        rows += recording_rows
+        sources |= recording_sources
+    if args.ledger and sources - {kind}:
+        raise ValueError(f"Refusing ledger rows: frame sources {sorted(sources - {kind})} conflict with manifest {kind!r}")
     args.output.mkdir(parents=True)
     report = args.output / "metrics.json"
     report.write_text(json.dumps({"dataset": str(args.dataset), "source_kind": kind, "episodes": rows,
@@ -121,22 +139,22 @@ def execute(args):
                       encoding="utf-8")
     table = args.output / "episodes.csv"
     with table.open("x", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["episode_index", *METRICS])
+        writer = csv.DictWriter(stream, fieldnames=["recording", "episode_index", *METRICS])
         writer.writeheader()
         writer.writerows(rows)
     if not args.ledger:
         return
     provenance = source_provenance()
-    hashes = {artifact_path(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in (report, table)}
+    hashes = {artifact_path(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in (*manifests, report, table)}
     for name in METRICS[1:]:
         values = [row[name] for row in rows if row[name] is not None]
         if not values:
             continue  # Unavailable is not zero; no row.
         metric, value = ("success_rate", float(np.mean(values))) if name == "success" else \
             (f"{name}_median", float(np.median(values)))
-        row = new_row(**provenance, slice="P5.1", experiment="gate_metrics_v1", backend=manifest["backend"],
-                      embodiment=manifest["embodiment"], metric=metric, value=value, ci95=None, n=len(values),
-                      seeds={"train": [], "eval": []}, config_path=artifact_path(manifest_path),
+        row = new_row(**provenance, slice="P5.1", experiment="gate_metrics_v1", backend=backend,
+                      embodiment=embodiment, metric=metric, value=value, ci95=None, n=len(values),
+                      seeds={"train": [], "eval": []}, config_path=artifact_path(root),
                       artifact_paths=list(hashes), artifact_sha256=hashes,
                       notes=f"Per-episode {name} over {len(values)} of {len(rows)} {kind} episodes in simulation; "
                             "distribution in metrics.json. No thresholds applied, no policy or hardware claim.")
