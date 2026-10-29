@@ -25,10 +25,10 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P3.3 | Complete | [Command limits, watchdog and emergency stop](learn/P3.3.md), regression checks |
 | P3.4 | Complete | [Shared simulation backend](learn/P3.4.md), three scripted embodiments and configuration-only extension test |
 | P3.5 | Partial | [Reviewed webcam/runtime software](learn/P3.5.md); live calibration and measured webcam latency still required |
-| P3.6 | Pending | Retarget errors on a recorded human clip |
-| P4.1 | Pending | Teleoperation collection UI |
+| P3.6 | Partial | [Reviewed clip recorder and retarget measurement](learn/P3.6.md); a recorded human clip and its ledger rows still required |
+| P4.1 | Partial | [Reviewed bench teleop collection](learn/P4.1.md); live webcam check on the `xlerobot_left` bench still required |
 | P4.2 | Requires human demonstration capture | Scripted data cannot substitute |
-| P5.1 | Pending | Quality distributions on collected demonstrations |
+| P5.1 | Partial | [Reviewed per-episode gate metrics](learn/P5.1.md); distributions on collected demonstrations still required |
 | P5.2 | Pending | Thresholds committed before gated training |
 | P5.3 | Pending | All/gated/random-control experiment and report |
 
@@ -51,7 +51,9 @@ The historical ledger prefix and every recorded artifact checksum were preserved
 
 The remaining slices retain their original acceptance criteria. P3.5 needs a real
 neutral-pose calibration and live webcam measurements for each embodiment. P3.6
-needs recorded human motion, and P4.2 needs actual human demonstrations before
-the quality-gate experiment can be accepted. Scripted recorder checks satisfy
+needs recorded human motion, P4.1 needs a live webcam session on the bench, and
+P4.2 needs actual human demonstrations before the quality-gate experiment can be
+accepted. P3.6, P4.1 and P5.1 software passed independent review; none of them
+has produced a measurement yet. Scripted recorder checks satisfy
 neither requirement. No hardware commands or human-data claims are authorized
 by this simulation checkpoint.

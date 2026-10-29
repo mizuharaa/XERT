@@ -19,6 +19,9 @@ or recorded evidence; a successful simulation check is not a hardware result.
 | P3.3 | [Command safety](P3.3.md) | Why is clipping a position insufficient to limit speed and acceleration? |
 | P3.4 | [Shared simulation backend](P3.4.md) | What changes when adding a robot, and which controller code stays shared? |
 | P3.5 | [Webcam runtime (partial)](P3.5.md) | Why distinguish host timing, simulation timing, and camera exposure? |
+| P3.6 | [Retarget quality (partial)](P3.6.md) | Why score LEAP at forward-kinematics fingertips instead of human fingertips? |
+| P4.1 | [Bench teleop collection (partial)](P4.1.md) | Why reuse the native success check instead of writing it again in Python? |
+| P5.1 | [Gate metrics (partial)](P5.1.md) | Why pre-register thresholds before training? |
 
 Use [the acceptance tracker](../MVP_PROGRESS.md) for current completion status.
 The master prompt's human-data quality experiment and hardware phases have
