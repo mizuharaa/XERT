@@ -1,0 +1,9 @@
+{
+  "mode": "pose",
+  "hands": {"right_wrist": "right"},
+  "axes": [[0, 0, 1], [-1, 0, 0], [0, -1, 0]],
+  "gains": [0.5, 1.0, 0.6],
+  "orientation": false,
+  "pinch_hand": "right",
+  "pinch_range": [0.15, 0.8]
+}

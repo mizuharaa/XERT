@@ -41,7 +41,7 @@ jobs:
       - name: Require the real LeRobot reader and ACT policy
         run: |
           .venv-lerobot/bin/python -c "from importlib.metadata import version; from lerobot.datasets.lerobot_dataset import LeRobotDataset; from lerobot.policies.act.modeling_act import ACTPolicy; assert version('lerobot') == '0.6.1'"
-          .venv-lerobot/bin/python -m pytest -q tests/test_lerobot_export.py tests/test_lerobot_act.py tests/test_recorder.py tests/test_quality.py
+          .venv-lerobot/bin/python -m pytest -q tests/test_lerobot_export.py tests/test_lerobot_act.py tests/test_recorder.py tests/test_quality.py tests/test_teleop.py
   webcam:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

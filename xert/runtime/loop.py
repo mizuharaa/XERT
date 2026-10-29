@@ -10,6 +10,8 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
              on_step=None, stop_requested=lambda: False):
     """Own/close source and backend. Return traces; callback sees state AFTER each step.
 
+    A truthy on_step return ends the run after that step, with no further command.
+
     A whole missed period aborts the run instead of bursting catch-up commands.
     Latency covers host acquisition return through simulator step completion only.
     """
@@ -68,11 +70,10 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
                       "handedness_scores": {} if frame is None else {name: h.handedness_score for name, h in frame.hands.items()},
                       "tracking_confidence": None, "deadline_overrun": bool(applied > deadline + dt)}
             records.append(record)
-            if on_step is not None:
-                on_step(record)
+            finished = on_step is not None and on_step(record)
             if record["deadline_overrun"]:
                 raise RuntimeError("Simulation step exceeded control period; stopped without catch-up")
-            if estop:
+            if estop or finished:
                 break
             tick += 1
         return records

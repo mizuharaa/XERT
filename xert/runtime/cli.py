@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def add_commands(commands):
-    for name in ("calibrate", "latency"):
+    for name in ("calibrate", "latency", "teleop"):
         parser = commands.add_parser(name, help="Explicitly open the selected webcam for simulation controls")
         parser.add_argument("--spec", type=Path, required=True)
         parser.add_argument("--profile", type=Path, required=True)
@@ -19,8 +19,11 @@ def add_commands(commands):
         parser.add_argument("--output", type=Path, required=True)
         if name == "calibrate":
             parser.add_argument("--timeout", type=float, default=30)
+            parser.add_argument("--bench", action="store_true",
+                                help="Neutral pose = pick-and-place bench reset pose (required by teleop)")
         else:
             parser.add_argument("--calibration", type=Path, required=True)
+        if name == "latency":
             parser.add_argument("--duration", type=float, default=300)
     parser = commands.add_parser("record-motion", help="Explicitly open the selected webcam and save landmarks, not images")
     parser.add_argument("--model", type=Path, default=ROOT / "build/models/hand_landmarker.task")
@@ -92,10 +95,23 @@ def record_motion(args):
     print(f"Saved {len(frames)} landmark frames (no images) to {args.output}")
 
 
+def _calibration(args, model):
+    calibration_bytes = args.calibration.read_bytes()
+    calibration = json.loads(calibration_bytes)
+    if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
+            calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
+        raise ValueError("Live run requires a matching, unmirrored webcam calibration")
+    return calibration_bytes, calibration
+
+
 def execute(args):
     if args.command == "record-motion":
         return record_motion(args)
+    if args.command == "teleop":
+        from .teleop import execute as teleop
+        return teleop(args)
     from xert.backends import MuJoCoBackend
+    from xert.backends.bench import BenchBackend
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
     from xert.retarget.calibrate import CalibratedMapper, create_calibration, load_profile, required_hands
     from xert.sources.webcam_mediapipe import WebcamSource
@@ -111,7 +127,8 @@ def execute(args):
     spec = load_spec(args.spec, contents=spec_bytes)
     profile = load_profile(args.profile, spec, contents=profile_bytes)
     model = _pinned_model(args.model)
-    backend = MuJoCoBackend(spec)
+    bench = getattr(args, "bench", False)
+    backend = BenchBackend(spec, 0) if bench else MuJoCoBackend(spec)
     try:
         if args.command == "calibrate":
             print("Hold the mapped hand(s) in a comfortable neutral pose. Capture begins after a short countdown.", flush=True)
@@ -125,7 +142,8 @@ def execute(args):
                             0 <= time.perf_counter() - frame.t_capture <= .2):
                         calibration = create_calibration(args.spec, args.profile, frame, backend,
                                                          spec_bytes=spec_bytes, profile_bytes=profile_bytes)
-                        calibration.update(camera=args.camera, model_sha256=model["sha256"], mirrored=False)
+                        calibration.update(camera=args.camera, model_sha256=model["sha256"], mirrored=False,
+                                           neutral_pose="bench_reset" if bench else "spec_rest")
                         args.output.parent.mkdir(parents=True, exist_ok=True)
                         with args.output.open("x", encoding="utf-8") as stream:
                             json.dump(calibration, stream, indent=2, allow_nan=False)
@@ -134,11 +152,7 @@ def execute(args):
                 raise RuntimeError("No fresh complete neutral hand pose observed before timeout")
             finally:
                 _close(source)
-        calibration_bytes = args.calibration.read_bytes()
-        calibration = json.loads(calibration_bytes)
-        if (calibration.get("source") != "webcam" or calibration.get("camera") != args.camera or
-                calibration.get("model_sha256") != model["sha256"] or calibration.get("mirrored") is not False):
-            raise ValueError("Live run requires a matching, unmirrored webcam calibration")
+        calibration_bytes, calibration = _calibration(args, model)
         mapper = CalibratedMapper(args.spec, args.profile, calibration, backend,
                                   spec_bytes=spec_bytes, profile_bytes=profile_bytes)
         provenance = source_provenance()

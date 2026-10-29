@@ -35,7 +35,7 @@ def load_runtime_dataset(root, repo_id="xert/runtime"):
     return dataset
 
 
-def _features(spec):
+def _features(spec, task_success=False):
     def vector(names, dtype="float32"):
         return {"dtype": dtype, "shape": (len(names),), "names": names}
     positions = [f"{name}.pos" for name in spec.joint_names]
@@ -54,6 +54,8 @@ def _features(spec):
     features["xert.tracking_confidence"] = vector(["tracking_confidence"])
     for name in ("phase", "source", "events_json"):
         features[f"xert.{name}"] = vector([name], "string")
+    if task_success:
+        features["next.success"] = vector(["success"], "bool")  # LeRobot name: success after this action.
     return features
 
 
@@ -62,9 +64,11 @@ class RuntimeRecorder:
 
     Successful exit verifies and atomically publishes a fresh dataset. Failures
     retain a private staging directory and flushed journal, never a final dataset.
-    ponytail: one episode per transaction; add session episode controls with P4 UI.
+    ponytail: one episode per transaction; the P4.1 teleop session publishes one dataset per episode.
+    task_success=True adds `next.success`; every record then needs an explicit boolean "success".
     """
-    def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None):
+    def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None,
+                 task_success=False):
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
         self.output = Path(output).absolute()
         if self.output.exists() or self.output.is_symlink():
@@ -78,7 +82,7 @@ class RuntimeRecorder:
         self.spec = load_spec(spec_path, contents=spec_bytes)
         if self.spec.control_hz != int(self.spec.control_hz):
             raise ValueError("LeRobot requires an integer control rate")
-        self.features = _features(self.spec)
+        self.features = _features(self.spec, task_success)
         self.previous = self._state(initial_state.q, initial_state.qd, initial_state.t)
         self.task, self.repo_id = task, repo_id
         self.count, self.closed = 0, False
@@ -190,6 +194,10 @@ class RuntimeRecorder:
                    "xert.events_json": events, "task": self.task}
         for key in ("clamped", "valid_motion", "latency_sample"):
             payload[f"xert.{key}"] = scalar(record[key], bool)
+        if "next.success" in self.features:
+            if type(record["success"]) is not bool:
+                raise ValueError("success must be an explicit boolean")
+            payload["next.success"] = scalar(record["success"], bool)
         return payload, state
 
     def __call__(self, record):
@@ -229,7 +237,7 @@ class RuntimeRecorder:
             self.manifest.update(status="aborted", frames=self.count, recovery_journal="xert_frames.jsonl")
             atomic_json(self.staging / "xert_recording.json", self.manifest)
 
-    def finish(self):
+    def finish(self, outcome=None):
         if self.closed:
             raise RuntimeError("Recorder is closed")
         try:
@@ -241,7 +249,7 @@ class RuntimeRecorder:
             self.dataset = None
             gc.collect()
             verification = verify_recording(self.staging, self.repo_id)
-            self.manifest.update(status="complete", frames=self.count)
+            self.manifest.update(status="complete", frames=self.count, task_outcome=outcome)
             atomic_json(self.staging / "xert_recording.json", self.manifest)
             atomic_json(self.staging / "roundtrip.json", verification)
             _publish(self.staging, self.output)
