@@ -22,6 +22,11 @@ def add_commands(commands):
         else:
             parser.add_argument("--calibration", type=Path, required=True)
             parser.add_argument("--duration", type=float, default=300)
+    parser = commands.add_parser("record-motion", help="Explicitly open the selected webcam and save landmarks, not images")
+    parser.add_argument("--model", type=Path, default=ROOT / "build/models/hand_landmarker.task")
+    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--duration", type=float, default=30)
 
 
 def escape_pressed():
@@ -41,7 +46,55 @@ def _close(resource):
         primary.add_note(f"Cleanup also failed: {type(cleanup).__name__}: {cleanup}")
 
 
+def _pinned_model(path):
+    model = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
+    if hashlib.sha256(path.read_bytes()).hexdigest() != model["sha256"]:
+        raise ValueError("Model checksum mismatch; run python -m scripts.fetch_hand_model")
+    return model
+
+
+def record_motion(args):
+    from xert.eval.ledger import source_provenance
+    from xert.sources.motion_file import dump_frame
+    from xert.sources.webcam_mediapipe import WebcamSource
+    if args.output.exists():
+        raise ValueError("Output already exists; choose a fresh evidence path")
+    if not math.isfinite(args.duration) or args.duration <= 0:
+        raise ValueError("Duration must be finite and positive")
+    model = _pinned_model(args.model)
+    provenance = source_provenance()
+    print("Hold the hand(s) still in a neutral pose for the first two seconds, then move. "
+          "Escape or Ctrl-C ends the clip early.", flush=True)
+    time.sleep(3)
+    frames = []
+    source = WebcamSource(args.model, model["sha256"], camera=args.camera)
+    try:
+        end = time.perf_counter() + args.duration
+        try:
+            while time.perf_counter() < end and not escape_pressed():
+                frame = source.read()
+                if frame is not None:
+                    frames.append(frame)
+                time.sleep(.005)
+        except KeyboardInterrupt:
+            pass  # Ctrl-C ends the clip like Escape; frames already inferred are kept.
+    finally:
+        _close(source)
+    if not frames:
+        raise RuntimeError("No landmark frames were inferred; nothing written")
+    clip = {"version": 1, "source": "webcam", "camera": args.camera, "mirrored": False, "model": model,
+            **provenance, "requested_duration_s": args.duration, "captured": source.captured,
+            "inferred": source.inferred, "capture_overwritten": source.overwritten,
+            "frames": [dump_frame(frame) for frame in frames]}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("x", encoding="utf-8") as stream:
+        json.dump(clip, stream, allow_nan=False)
+    print(f"Saved {len(frames)} landmark frames (no images) to {args.output}")
+
+
 def execute(args):
+    if args.command == "record-motion":
+        return record_motion(args)
     from xert.backends import MuJoCoBackend
     from xert.eval.ledger import append_row, artifact_path, new_row, source_provenance
     from xert.retarget.calibrate import CalibratedMapper, create_calibration, load_profile, required_hands
@@ -57,9 +110,7 @@ def execute(args):
     spec_bytes, profile_bytes = args.spec.read_bytes(), args.profile.read_bytes()
     spec = load_spec(args.spec, contents=spec_bytes)
     profile = load_profile(args.profile, spec, contents=profile_bytes)
-    model = json.loads((ROOT / "assets/mediapipe/SOURCE.json").read_text())
-    if hashlib.sha256(args.model.read_bytes()).hexdigest() != model["sha256"]:
-        raise ValueError("Model checksum mismatch; run python -m scripts.fetch_hand_model")
+    model = _pinned_model(args.model)
     backend = MuJoCoBackend(spec)
     try:
         if args.command == "calibrate":

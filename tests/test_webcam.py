@@ -170,3 +170,46 @@ def test_native_cleanup_failure_is_reported_without_retrying_handles(tmp_path, r
     assert attempts == ["detector"]
     with pytest.raises(RuntimeError, match="closed"):
         source.read()
+
+
+def test_record_motion_saves_landmarks_and_provenance_not_pixels(tmp_path, monkeypatch):
+    import json
+    from test_runtime import scripted_hand
+    from xert.runtime import cli
+    from xert.sources import webcam_mediapipe
+    from xert.sources.motion_file import load_clip
+    model = tmp_path / "model.task"
+    model.write_bytes(b"mock")
+    digest = hashlib.sha256(b"mock").hexdigest()
+    (tmp_path / "assets/mediapipe").mkdir(parents=True)
+    (tmp_path / "assets/mediapipe/SOURCE.json").write_text(json.dumps({"sha256": digest}))
+    hand = scripted_hand()
+    image, world = ([SimpleNamespace(x=p[0], y=p[1], z=p[2]) for p in points] for points in (hand.image, hand.world))
+    class Capture:
+        def isOpened(self): return True
+        def read(self):
+            time.sleep(.003)
+            return True, np.zeros((48, 64, 3), dtype=np.uint8)
+        def release(self): pass
+    class Detector:
+        def detect_for_video(self, image_, timestamp):
+            return SimpleNamespace(handedness=[[SimpleNamespace(category_name="Right", score=.9)]],
+                                   hand_landmarks=[image], hand_world_landmarks=[world])
+        def close(self): pass
+    real_source, real_sleep, polls = webcam_mediapipe.WebcamSource, time.sleep, []
+    monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda path, sha, camera: real_source(
+        path, sha, camera=camera, capture=Capture(), detector=Detector()))
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: real_sleep(min(s, .005)))  # skip the countdown only
+    monkeypatch.setattr(cli, "escape_pressed", lambda: polls.append(1) or len(polls) > 100)
+    args = SimpleNamespace(command="record-motion", model=model, camera=3, output=tmp_path / "clip.json", duration=60)
+    cli.execute(args)  # Escape ends the 60 s request early
+    header, frames = load_clip(args.output)
+    assert header["source"] == "webcam" and header["camera"] == 3 and header["model"]["sha256"] == digest
+    assert len(header["git_commit"]) == 40 and header["inferred"] >= len(frames) > 0
+    assert {f.source for f in frames} == {"recorded_human"}
+    assert frames[0].image_size == (64, 48) and set(frames[0].hands) == {"right"}
+    assert set(json.loads(args.output.read_text())["frames"][0]) == {
+        "sequence", "t_capture", "t_landmarks", "image_size", "hands"}  # landmarks only, no pixels
+    with pytest.raises(ValueError, match="already exists"):
+        cli.execute(args)

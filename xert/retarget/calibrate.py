@@ -178,6 +178,7 @@ class CalibratedMapper:
                 targets[site] = (position, quat)
             else:
                 targets[site] = position
+        self.targets = targets  # Requested IK targets, kept so retarget quality can score them.
         desired = solve(self.spec, self.backend.model, self.backend.data, targets)
         if profile["pinch_hand"] is not None:
             lo, hi = profile["pinch_range"]
