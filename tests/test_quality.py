@@ -64,6 +64,8 @@ def test_verdict_reasons_and_unknown_threshold():
     assert verdict(metrics, {"dropped_frame_fraction": {"max": .5}}) == (True, [])
     with pytest.raises(ValueError, match="Unknown"):
         verdict(metrics, {"jiter": {"max": 1}})
+    with pytest.raises(ValueError, match="numbers"):
+        verdict(metrics, {"clamp_count": {"max": "2"}})
 
 
 def run_cli(monkeypatch, *args):

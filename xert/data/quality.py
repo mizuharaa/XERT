@@ -84,6 +84,8 @@ def verdict(metrics, thresholds):
     for name, bounds in thresholds.items():
         if name not in metrics or not bounds or set(bounds) - {"min", "max"}:
             raise ValueError(f"Unknown gate threshold: {name}={bounds!r}")
+        if any(type(bound) not in (int, float) for bound in bounds.values()):
+            raise ValueError(f"Gate threshold bounds must be numbers: {name}={bounds!r}")
         value = metrics[name]
         if value is None:
             reasons.append(f"{name} unavailable")
