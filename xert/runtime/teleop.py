@@ -53,13 +53,15 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
         mapper = make_mapper(backend)
         recorder = RuntimeRecorder(spec_path, backend.read_state(), output / f"episode_{seed:06d}", task=TASK,
                                    source={**provenance, "bench_seed": seed, "bench": backend.env.metadata()},
-                                   spec_bytes=spec_bytes, task_success=True)
+                                   spec_bytes=spec_bytes, task_success=True,
+                                   environment_state=(backend.object_names, backend.object_state()))
         end = []
 
         def step(record):
             if end:
                 return False  # E-stop hold tick after Escape; that recording is already ended.
             record["success"] = bool(backend.info["success"])
+            record["environment_state"] = backend.object_state()  # Same tick as record["q"]; stored pre-action.
             recorder(record)
             if record["success"] or backend.finished:
                 end.append("finish")

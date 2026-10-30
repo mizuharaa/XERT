@@ -51,6 +51,7 @@ def test_runtime_real_v3_alignment_masks_precision(robot, tmp_path):
     manifest = json.loads((output / "xert_recording.json").read_text())
     assert manifest["task_outcome"] is None and manifest["source"]["kind"] == "scripted"
     assert dataset.features["action"]["names"] == [f"{joint}.pos" for joint in spec.joint_names]
+    assert "observation.environment_state" not in dataset.features  # Opt-in, bench only.
     assert len(dataset) == len(records) == 5
     previous = np.asarray(manifest["initial_state"]["q"], dtype=np.float32)
     for i, record in enumerate(records):

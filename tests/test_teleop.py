@@ -112,12 +112,34 @@ def test_bench_contact_success_reaches_next_success(tmp_path):
         return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
                                (limits[:, 1] - limits[:, 0]))
 
-    kept, _ = session(tmp_path, [" "] + [None] * 600 + ["\x1b"], expert)
+    truth, joints = [], []  # Object state straight from MjData and the env, not the native observation.
+
+    def tracked(backend):
+        def capture():
+            env, data = backend.env, backend.data
+            truth.append([*data.qpos[env.block_q:env.block_q + 7], *data.site_xpos[env.site],
+                          *backend.model.body("tray").pos, env.steps / env.config["horizon"]])
+            joints.append(data.qpos[env.qids].copy())
+        real = backend.send_targets
+        backend.send_targets = lambda q, t: (real(q, t), capture())
+        capture()  # Reset state: what the policy sees before action 0.
+        return expert(backend)
+
+    kept, _ = session(tmp_path, [" "] + [None] * 600 + ["\x1b"], tracked)
     manifest = json.loads((kept[0] / "xert_recording.json").read_text())
     assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
-    dataset = load_runtime_dataset(kept[0])
+    dataset = load_runtime_dataset(kept[0])  # finish() already ran verify_recording over every frame.
     flags = [dataset[i]["next.success"].item() for i in range(len(dataset))]
     assert flags[-1] and not any(flags[:-1]) and len(flags) == manifest["task_outcome"]["steps"]
+    feature = dataset.features["observation.environment_state"]
+    native = BenchBackend(load_spec(SPEC), 0).env.metadata()["observation_names"]
+    assert feature["dtype"] == "float32" and feature["names"] == native[12:]  # P5.3 looks these names up.
+    observed = np.stack([dataset[i]["observation.environment_state"].numpy() for i in range(len(dataset))])
+    # Frame k holds the state captured before action k, the same instant as its observation.state.
+    np.testing.assert_array_equal(observed, np.asarray(truth[:-1], dtype=np.float32))
+    np.testing.assert_array_equal(np.stack([dataset[i]["observation.state"].numpy() for i in range(len(dataset))]),
+                                  np.asarray(joints[:-1], dtype=np.float32))
+    assert np.ptp(observed[:, 2]) > .01  # The block really moves.
     del dataset
 
 
