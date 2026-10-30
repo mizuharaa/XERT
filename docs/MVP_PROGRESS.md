@@ -30,7 +30,7 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P4.2 | Requires human demonstration capture | Scripted data cannot substitute |
 | P5.1 | Partial | [Reviewed per-episode gate metrics](learn/P5.1.md); distributions on collected demonstrations still required |
 | P5.2 | Pending | Thresholds committed before gated training |
-| P5.3 | Pending | All/gated/random-control experiment and report |
+| P5.3 | Partial | [Reviewed pre-registered all/gated/random-control harness](learn/P5.3.md); needs P4.2 demos and committed P5.2 thresholds |
 
 Accepted slices: P0.1–P0.3, P1.1–P1.4, P2.1–P2.2 and P3.1–P3.4.
 These are thirteen of the twenty required simulation slices. This counts accepted
@@ -53,7 +53,8 @@ The remaining slices retain their original acceptance criteria. P3.5 needs a rea
 neutral-pose calibration and live webcam measurements for each embodiment. P3.6
 needs recorded human motion, P4.1 needs a live webcam session on the bench, and
 P4.2 needs actual human demonstrations before the quality-gate experiment can be
-accepted. P3.6, P4.1 and P5.1 software passed independent review; none of them
-has produced a measurement yet. Scripted recorder checks satisfy
+accepted. P3.6, P4.1, P5.1 and P5.3 software passed independent review; none of them
+has produced a measurement yet. P5.2 thresholds must be chosen from the P4.2
+distributions and committed before P5.3 can run. Scripted recorder checks satisfy
 neither requirement. No hardware commands or human-data claims are authorized
 by this simulation checkpoint.

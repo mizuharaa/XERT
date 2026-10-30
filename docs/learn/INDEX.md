@@ -22,6 +22,7 @@ or recorded evidence; a successful simulation check is not a hardware result.
 | P3.6 | [Retarget quality (partial)](P3.6.md) | Why score LEAP at forward-kinematics fingertips instead of human fingertips? |
 | P4.1 | [Bench teleop collection (partial)](P4.1.md) | Why reuse the native success check instead of writing it again in Python? |
 | P5.1 | [Gate metrics (partial)](P5.1.md) | Why pre-register thresholds before training? |
+| P5.3 | [Gate experiment harness (partial)](P5.3.md) | Why does the same-size random subset (condition C) exist? |
 
 Use [the acceptance tracker](../MVP_PROGRESS.md) for current completion status.
 The master prompt's human-data quality experiment and hardware phases have
