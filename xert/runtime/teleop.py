@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
+
 from xert.spec import load_spec
 
 TASK = "Pick up the orange block and place it in the green tray"
@@ -83,8 +85,9 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                 recorder._abort_preserving(exc)
             raise
         result = end[0] if end else "stop"
-        while result != "quit" and keys() is not None:
-            pass  # Drop keys buffered while the episode ended, so none starts the next one.
+        while result != "quit" and (key := keys()) is not None:
+            # Drop keys buffered while the episode ended, so none starts the next one; Escape still quits.
+            result = "quit" if key_action(key, recording=False) == "quit" else result
         if result == "discard":
             recorder.abort()
             shutil.rmtree(recorder.work)
@@ -118,12 +121,15 @@ def execute(args):
     calibration_bytes, calibration = _calibration(args, model)
     if calibration.get("neutral_pose") != "bench_reset":
         raise ValueError("Teleop needs a bench-reset neutral calibration: xert calibrate --bench")
+    bench = BenchBackend(spec, 0)
 
     def make_mapper(backend):
         return CalibratedMapper(args.spec, args.profile, calibration, backend,
                                 spec_bytes=spec_bytes, profile_bytes=profile_bytes)
 
-    make_mapper(BenchBackend(spec, 0))  # Reject a non-bench spec or bad calibration before the camera opens.
+    make_mapper(bench)  # Reject a non-bench spec or bad calibration before the camera opens.
+    if not np.allclose(calibration["sites"]["grasp"]["position"], bench.data.site("grasp").xpos, rtol=0, atol=1e-6):
+        raise ValueError("Calibration grasp is not the bench reset grasp: xert calibrate --bench")
     provenance = {"kind": "webcam", "camera": args.camera, "mirrored": False, "model": model,
                   "profile": profile, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": calibration, "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),

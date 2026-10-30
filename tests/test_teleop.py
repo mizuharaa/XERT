@@ -85,6 +85,13 @@ def test_discard_writes_nothing_and_estop_never_publishes(tmp_path, monkeypatch)
     assert runs[-1][-1]["phase"] == "estop" and runs[-1][-2]["phase"] != "estop"
 
 
+def test_escape_buffered_as_episode_ends_still_quits(tmp_path):
+    pytest.importorskip("lerobot")
+    # Space stops on tick 1; the drain drops "x" but Escape ends the session (the old drain discarded it).
+    kept, output = session(tmp_path, [" ", None, " ", "x", "\x1b"])
+    assert kept == [] and [path.name[:16] for path in output.iterdir()] == [".xert-recording-"]
+
+
 def test_stop_finalises_episode_that_round_trips(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset, verify_recording
@@ -172,7 +179,10 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
                            calibration=path, output=tmp_path / "out")
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: pytest.fail("Camera opened"))
     monkeypatch.setattr(teleop.sys, "platform", "win32")  # input checks must not depend on the CI host
-    for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench")):
+    grasp = neutral["sites"]["grasp"]
+    moved = {"sites": {**neutral["sites"], "grasp": {**grasp, "position": np.add(grasp["position"], .01).tolist()}}}
+    for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench"),
+                         (moved, "reset grasp")):  # A bench_reset label alone is not trusted.
         path.write_text(json.dumps({**neutral, **bad}))
         with pytest.raises(ValueError, match=message):
             cli.execute(args)
