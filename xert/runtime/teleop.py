@@ -1,5 +1,6 @@
 """Terminal teleoperation on the pick-and-place bench: one LeRobot v3 dataset per kept episode."""
 import hashlib
+import queue
 import shutil
 import sys
 import time
@@ -25,7 +26,20 @@ def key_action(key, recording):
     return None
 
 
+VIEWER_KEYS = queue.SimpleQueue()  # Keys typed while the viewer window has focus.
+
+
+def viewer_key(code):
+    """MuJoCo key_callback (GLFW codes, viewer thread): Space, D and Escape join the console keys."""
+    if key := {32: " ", 68: "d", 256: "\x1b"}.get(code):
+        VIEWER_KEYS.put(key)
+
+
 def read_key():
+    try:
+        return VIEWER_KEYS.get_nowait()
+    except queue.Empty:
+        pass
     if sys.platform == "win32":
         import msvcrt
         return msvcrt.getwch() if msvcrt.kbhit() else None
@@ -38,7 +52,8 @@ def open_viewer(model):
     import mujoco
     import mujoco.viewer
     data = mujoco.MjData(model)
-    handle = mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False)
+    handle = mujoco.viewer.launch_passive(model, data, key_callback=viewer_key, show_left_ui=False,
+                                          show_right_ui=False)
 
     def show(source):
         data.qpos[:], data.time = source.qpos, source.time
