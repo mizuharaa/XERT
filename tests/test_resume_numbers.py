@@ -38,22 +38,27 @@ def test_correction_note_supersedes_but_a_bare_mention_does_not(capsys):
     mentioned = _row(0.5, 1, metric="b")
     fix = _row(0.5, 2, metric="c", notes=f"Rerun. Corrects earlier row IDs: {wrong['id']}")
     aside = _row(0.5, 2, metric="d", notes=f"Same states as row {mentioned['id']}.")
-    out = _run(capsys, [wrong, mentioned, fix, aside])
+    also_wrong = _row(0.5, 1, metric="e")
+    fix2 = _row(0.5, 2, metric="f", notes=f"This row supersedes {also_wrong['id']}")
+    out = _run(capsys, [wrong, mentioned, fix, aside, also_wrong, fix2])
 
     assert f"superseded {wrong['id']} by {fix['id']}" in out and f"id {wrong['id']}" not in out
+    assert f"superseded {also_wrong['id']} by {fix2['id']}" in out
     assert f"id {mentioned['id']}" in out
 
 
 def test_rows_differing_in_seed_phase_or_condition_are_all_kept(capsys):
     rows = [_row(0.5, 1, train=[0]), _row(0.5, 2, train=[1]),
             _row(0.5, 1, metric="mae", phase="sweep_10"), _row(0.5, 2, metric="mae", phase="sweep_20"),
+            _row(0.5, 1, metric="mae2", chunk_size=10), _row(0.5, 2, metric="mae2", chunk_size=20),
+            # the script never names `condition`: this checks that unknown fields stay in the key
             *(_row(0.5, i + 1, metric="gate", condition=c) for i, c in enumerate("ABC"))]
     out = _run(capsys, rows)
 
     assert "0 older repeats dropped" in out
     assert all(f"id {row['id']}" in out for row in rows)
     for label in ("train_seeds=[0]", "train_seeds=[1]", "phase=sweep_10", "phase=sweep_20",
-                  "condition=A", "condition=B", "condition=C"):
+                  "chunk_size=10", "chunk_size=20", "condition=A", "condition=B", "condition=C"):
         assert label in out
 
 
