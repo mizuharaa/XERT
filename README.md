@@ -4,7 +4,10 @@ XERT sends one human motion stream through one middleware to several simulated
 robot bodies, records the teleoperation data in LeRobot v3 format, and is built
 to test whether a pre-registered quality gate on that data helps imitation
 learning. An embodiment is one robot body with its own joints and limits.
-Adding a robot means adding a model file and a YAML spec, not controller code.
+On the scripted path, adding a robot means adding a model file and a YAML
+spec, not controller code. Webcam control also needs a mapping profile in
+`configs/teleop/`, and some vendor models need a preparation step first (G1's
+legs and floating base are removed by `scripts/prepare_embodiments.py`).
 
 Everything measured so far is MuJoCo simulation. There are no hardware results
 and no human-data results yet. See [What is not shown](#what-is-not-shown).
@@ -86,7 +89,8 @@ The [acceptance tracker](docs/MVP_PROGRESS.md) is the source for status, and
 
 `python -m xert --help` lists the commands: `ledger show`, `calibrate`,
 `latency`, `teleop`, `record-motion` and `quality`. Each webcam command opens a
-camera only when run explicitly.
+camera only when run explicitly. The bare `xert` command exists only after
+`pip install -e .`; otherwise use `python -m xert`, as below.
 
 ## What is measured
 
@@ -118,6 +122,9 @@ How the ledger works:
   are not pooled into extra trials.
 - `xle_workbench.cli evaluate` and the HTTP benchmark job append rows; so do the
   slice scripts under `scripts/` and the `xert` measurement commands.
+- Git provenance is captured before an evaluation starts. If the append fails,
+  the operation fails; any simulation artifacts left behind are not
+  ledger-backed evidence.
 - Set `XERT_LEDGER_PATH` to a separate file for smoke runs. Pytest always uses a
   temporary ledger.
 
@@ -127,6 +134,9 @@ How the ledger works:
   hardware backend exists. Spec velocity and acceleration limits are chosen
   simulation settings, not measured motor limits. The safety layer limits
   commanded positions in simulation; it is not certified hardware safety.
+  Hardware work must start from measured kit geometry, joint signs, limits and
+  timing, then supervised low-speed trials. Simulation actions are never
+  forwarded straight to motors.
 - **No human-data results.** Live webcam latency (P3.5), retarget error on a
   human clip (P3.6), teleop success (P4.1), gate-metric distributions (P5.1) and
   the gate result (P5.3) are all TBD (not measured). Scripted test clips and
@@ -161,9 +171,13 @@ How the ledger works:
 These need a person at the webcam; scripted data cannot substitute.
 
 1. **P3.5:** check known left and right hands in the camera view, capture a
-   neutral calibration, then run `xert latency --duration 300` for each embodiment.
-2. **P3.6:** record a human clip with `xert record-motion` and run
-   `scripts/measure_retarget.py` on it.
+   neutral calibration with `python -m xert calibrate`, then for each embodiment
+   run `python -m xert latency --spec xert/spec/<robot>.yaml --profile
+   configs/teleop/<robot>.json --calibration <neutral.json> --output <fresh dir>
+   --duration 300`.
+2. **P3.6:** record a human clip with `python -m xert record-motion --output
+   results/p3.6/clip.json`, then run `python scripts/measure_retarget.py --clip
+   results/p3.6/clip.json --output <fresh dir>`.
 3. **P4.1:** run a live teleop session on the `xlerobot_left` bench.
 4. **P4.2:** record the human demonstrations.
 5. **P5.2:** choose gate thresholds from the P5.1 distributions and commit
@@ -221,8 +235,10 @@ See [P0.3](docs/learn/P0.3.md).
 
 ## Python environments
 
-The dependency stacks conflict (LeRobot needs Python 3.13 and NumPy below 2.3;
-the base environment uses Python 3.11), so there are four separate environments.
+The dependency stacks conflict. LeRobot 0.6.1 declares Python 3.12 or newer,
+PyTorch below 2.12 and NumPy below 2.3, while the base environment pins PyTorch
+2.14.0 on Python 3.11; the PyTorch pin is the real clash. The optional
+environments use Python 3.13 by project choice. So there are four environments.
 Build the native core once per environment, in its own build directory; the
 [LeRobot setup notes](docs/LEROBOT_EXPORT.md) give the CMake command.
 
@@ -253,6 +269,7 @@ ensembling ([P1.3](docs/learn/P1.3.md)).
 
 ```powershell
 .\.venv\Scripts\python.exe -m xle_workbench.cli --output data/collection.json collect --episodes 10 --seed 0
+.\.venv\Scripts\python.exe -m xle_workbench.cli --output data/baseline.json train --collection data/collection.json --config '@configs/baseline.json'
 .\.venv\Scripts\python.exe -m xle_workbench.cli --output data/act.json train --collection data/collection.json --config '@configs/act.json'
 .\.venv\Scripts\python.exe -m xle_workbench.cli evaluate --model MODEL_ID --episodes 10 --seed 10000
 .\.venv\Scripts\python.exe -m xle_workbench.cli replay EPISODE_ID --image data/replay.png
@@ -277,10 +294,27 @@ scheduler, and closing it interrupts active jobs and discards unsaved sessions.
 | `POST /episodes/import` | Import raw NPZ only after seed/config resimulation verifies its transitions |
 | `GET /models`, `GET /evaluations` | Checkpoint provenance and measured reports |
 
+Example body for `POST /jobs/benchmark`:
+
+```json
+{
+  "seeds": [10000, 10001, 10002],
+  "model_ids": ["REPLACE_WITH_MODEL_ID"],
+  "conditions": [
+    {"friction": 1.0, "delay_steps": 0},
+    {"friction": 0.6, "delay_steps": 0},
+    {"friction": 1.0, "delay_steps": 2}
+  ]
+}
+```
+
 Session actions are absolute normalized joint targets. `expert=true` selects
-the scripted controller; those are not human demonstrations. Evaluation seeds
-cannot overlap demonstration seeds, and changing the horizon invalidates a
-checkpoint's schema contract.
+the scripted controller; those are not human demonstrations. Simulation import
+needs the original seed and configuration; it is not a LeRobot dataset or
+hardware-log importer. Evaluation seeds cannot overlap demonstration seeds, and
+changing the horizon invalidates a checkpoint's schema contract. Reports include
+seeds, exact configuration, outcome reasons, trace IDs and a success-rate
+interval; small trial counts remain small evidence.
 
 Artifacts live under `data/episodes`, `data/models`, `data/evaluations` and
 `data/jobs`. Hashes detect accidental changes; they are not signatures. Upstream
@@ -289,5 +323,6 @@ assets are vendored with license, source revision and checksums under `assets/`.
 Older background docs: [engineering notebook](docs/ENGINEERING_NOTEBOOK.md),
 [simulation decisions](docs/SIMULATION.md), [learning](docs/LEARNING.md),
 [rebuild guide](docs/BUILD_IT_YOURSELF.md) and the
-[repository audit](docs/STATE_OF_REPO.md), which lists the parts of these that
-are out of date.
+[P0.1 audit (2026-10-20)](docs/STATE_OF_REPO.md). The audit is a dated snapshot,
+now partly stale; it lists the parts of the older docs that were already out of
+date then.
