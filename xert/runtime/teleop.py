@@ -32,9 +32,24 @@ def read_key():
     return None  # ponytail: Windows console keys only; Ctrl-C still stops through finally elsewhere.
 
 
+def open_viewer(model):
+    """MuJoCo passive window on a viewer-side MjData. Each tick copies the bench pose into it, so mouse
+    perturbations and UI edits in the window never reach the physics that the native rule judges."""
+    import mujoco
+    import mujoco.viewer
+    data = mujoco.MjData(model)
+    handle = mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False)
+
+    def show(source):
+        data.qpos[:], data.time = source.qpos, source.time
+        mujoco.mj_forward(model, data)
+        handle.sync()  # No-op once the operator closes the window; the episode carries on.
+    return SimpleNamespace(data=data, show=show, close=handle.close)
+
+
 def run_session(source, spec_path, output, make_mapper, *, provenance, spec_bytes=None, keys=read_key,
-                clock=time.perf_counter, sleep=time.sleep):
-    """Caller owns `source`. Bench seed = kept-episode index, so a discarded attempt retries its seed."""
+                clock=time.perf_counter, sleep=time.sleep, viewer=None):
+    """Caller owns `source` and `viewer`. Bench seed = kept-episode index, so a discarded attempt retries its seed."""
     from xert.backends.bench import BenchBackend
     from xert.data.recorder import RuntimeRecorder
     from .loop import run_loop
@@ -57,6 +72,8 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                                    source={**provenance, "bench_seed": seed, "bench": backend.env.metadata()},
                                    spec_bytes=spec_bytes, task_success=True,
                                    environment_state=(backend.object_names, backend.object_state()))
+        if viewer:
+            viewer.show(backend.data)
         end = []
 
         def step(record):
@@ -65,6 +82,8 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
             record["success"] = bool(backend.info["success"])
             record["environment_state"] = backend.object_state()  # Same tick as record["q"]; stored pre-action.
             recorder(record)
+            if viewer:
+                viewer.show(backend.data)
             if record["success"] or backend.finished:
                 end.append("finish")
             elif pressed := key_action(keys(), recording=True):
@@ -134,8 +153,14 @@ def execute(args):
                   "profile": profile, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": calibration, "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
                   "success_rule": "native bench contact rule (cpp/src/env.cpp Env::step)", **source_provenance()}
-    source = WebcamSource(args.model, model["sha256"], camera=args.camera)
+    viewer = open_viewer(bench.model) if getattr(args, "viewer", False) else None
     try:
-        run_session(source, args.spec, args.output, make_mapper, provenance=provenance, spec_bytes=spec_bytes)
+        source = WebcamSource(args.model, model["sha256"], camera=args.camera)
+        try:
+            run_session(source, args.spec, args.output, make_mapper, provenance=provenance, spec_bytes=spec_bytes,
+                        viewer=viewer)
+        finally:
+            _close(source)
     finally:
-        _close(source)
+        if viewer:
+            _close(viewer)

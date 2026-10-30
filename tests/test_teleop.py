@@ -2,7 +2,10 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
+import time
 from types import SimpleNamespace
 
 import mujoco
@@ -34,14 +37,14 @@ def calibration(clock):
     return create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), BenchBackend(load_spec(SPEC), 0))
 
 
-def session(tmp_path, keys, make_mapper=None):
+def session(tmp_path, keys, make_mapper=None, viewer=None):
     """Keys are exact: every poll consumes one entry and each sequence ends with Escape at idle."""
     clock = ScriptedClock()
     neutral = calibration(clock)
     make_mapper = make_mapper or (lambda backend: CalibratedMapper(SPEC, PROFILE, neutral, backend))
     pending = iter(keys)
     kept = teleop.run_session(ScriptedSource(clock), SPEC, tmp_path / "session", make_mapper, provenance=SCRIPTED,
-                              keys=lambda: next(pending), clock=clock, sleep=clock.sleep)
+                              keys=lambda: next(pending), clock=clock, sleep=clock.sleep, viewer=viewer)
     assert next(pending, "done") == "done"
     return kept, tmp_path / "session"
 
@@ -150,6 +153,33 @@ def test_bench_contact_success_reaches_next_success(tmp_path):
     del dataset
 
 
+@pytest.mark.skipif(sys.platform != "win32" and not os.environ.get("DISPLAY"), reason="no display for a window")
+def test_viewer_mirrors_bench_within_deadline_and_never_touches_physics(tmp_path):
+    pytest.importorskip("lerobot")
+    from xert.data.recorder import load_runtime_dataset
+    keys, shown = [" ", None, None, None, " ", None, "\x1b"], []
+    viewer = teleop.open_viewer(BenchBackend(load_spec(SPEC), 0).model)
+    try:
+        def timed(data):
+            start = time.perf_counter()
+            viewer.show(data)
+            shown.append((time.perf_counter() - start, data.qpos.copy()))
+        with_viewer, _ = session(tmp_path / "viewer", keys, viewer=SimpleNamespace(show=timed))
+    finally:
+        viewer.close()
+    without, _ = session(tmp_path / "plain", keys)
+    seconds = [s for s, _ in shown]
+    print(f"viewer show: n={len(seconds)} max={max(seconds) * 1e3:.2f} ms")
+    assert len(shown) == 1 + 4  # Episode start, then once per recorded tick.
+    assert max(seconds) < .25 / load_spec(SPEC).control_hz  # Under a quarter of the control period.
+    np.testing.assert_array_equal(viewer.data.qpos, shown[-1][1])
+    a, b = load_runtime_dataset(with_viewer[0]), load_runtime_dataset(without[0])
+    for i in range(len(a)):
+        for key in ("observation.state", "observation.environment_state", "action"):
+            np.testing.assert_array_equal(a[i][key].numpy(), b[i][key].numpy())
+    del a, b
+
+
 def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch):
     from xert.runtime import cli
     from xert.sources import webcam_mediapipe
@@ -194,6 +224,22 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
     closed.clear()
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", camera)
     monkeypatch.setattr(teleop, "run_session", lambda source, spec, output, make_mapper, **kw: seen.update(kw))
+    monkeypatch.setattr(teleop, "open_viewer", lambda model: pytest.fail("Viewer opened without --viewer"))
     cli.execute(args)
     assert closed and seen["provenance"]["kind"] == "webcam" and seen["provenance"]["mirrored"] is False
     assert seen["provenance"]["calibration_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert seen["viewer"] is None
+
+    def broken_close():
+        raise OSError("window")
+
+    def failing_session(*a, **kw):
+        assert kw["viewer"] is window
+        raise RuntimeError("session failed")
+
+    window, closed[:] = SimpleNamespace(close=lambda: closed.append("viewer") or broken_close()), []
+    monkeypatch.setattr(teleop, "open_viewer", lambda model: window)
+    monkeypatch.setattr(teleop, "run_session", failing_session)
+    with pytest.raises(RuntimeError, match="session failed") as error:
+        cli.execute(SimpleNamespace(**vars(args), viewer=True))
+    assert closed == [True, "viewer"] and "OSError: window" in error.value.__notes__[-1]
