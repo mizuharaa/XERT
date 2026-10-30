@@ -2,7 +2,10 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
+import sys
+import time
 from types import SimpleNamespace
 
 import mujoco
@@ -34,15 +37,23 @@ def calibration(clock):
     return create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), BenchBackend(load_spec(SPEC), 0))
 
 
-def session(tmp_path, keys, make_mapper=None):
-    """Keys are exact: every poll consumes one entry and each sequence ends with Escape at idle."""
+def expert(backend):
+    # Scripted IK expert of the bench, still passed through the runtime safety clamps.
+    limits = backend.env.limits
+    return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
+                           (limits[:, 1] - limits[:, 0]))
+
+
+def session(tmp_path, keys, make_mapper=None, viewer=None):
+    """Listed keys are exact: every poll consumes one entry and each sequence ends with Escape. A callable polls freely."""
     clock = ScriptedClock()
     neutral = calibration(clock)
     make_mapper = make_mapper or (lambda backend: CalibratedMapper(SPEC, PROFILE, neutral, backend))
-    pending = iter(keys)
+    pending = None if callable(keys) else iter(keys)
     kept = teleop.run_session(ScriptedSource(clock), SPEC, tmp_path / "session", make_mapper, provenance=SCRIPTED,
-                              keys=lambda: next(pending), clock=clock, sleep=clock.sleep)
-    assert next(pending, "done") == "done"
+                              keys=keys if pending is None else lambda: next(pending), clock=clock, sleep=clock.sleep,
+                              viewer=viewer)
+    assert pending is None or next(pending, "done") == "done"
     return kept, tmp_path / "session"
 
 
@@ -85,6 +96,32 @@ def test_discard_writes_nothing_and_estop_never_publishes(tmp_path, monkeypatch)
     assert runs[-1][-1]["phase"] == "estop" and runs[-1][-2]["phase"] != "estop"
 
 
+def test_escape_buffered_as_episode_ends_saves_then_quits(tmp_path):
+    pytest.importorskip("lerobot")
+    # Space stops on tick 1; the drain drops "x", the episode is saved, then Escape ends the session.
+    kept, output = session(tmp_path, [" ", None, " ", "x", "\x1b", None])
+    assert [path.name for path in kept] == [path.name for path in output.iterdir()] == ["episode_000000"]
+
+
+def test_escape_on_the_success_tick_saves_then_quits(tmp_path):
+    pytest.importorskip("lerobot")
+    backends, drained = [], []
+
+    def keys():  # Start at idle, nothing while recording, Escape buffered on the tick the bench succeeds.
+        if not backends:
+            return " "
+        if not backends[-1].info["success"]:
+            return None
+        drained.append(len(drained))
+        assert len(drained) <= 2, "Session kept polling after Escape"
+        return "\x1b" if len(drained) == 1 else None
+
+    kept, output = session(tmp_path, keys, lambda backend: backends.append(backend) or expert(backend))
+    manifest = json.loads((kept[0] / "xert_recording.json").read_text())
+    assert [path.name for path in output.iterdir()] == ["episode_000000"] and len(backends) == 1
+    assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
+
+
 def test_stop_finalises_episode_that_round_trips(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset, verify_recording
@@ -105,20 +142,75 @@ def test_stop_finalises_episode_that_round_trips(tmp_path):
 def test_bench_contact_success_reaches_next_success(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset
+    truth, joints = [], []  # Object state straight from MjData and the env, not the native observation.
 
-    def expert(backend):
-        # Scripted IK expert of the bench, still passed through the runtime safety clamps.
-        limits = backend.env.limits
-        return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
-                               (limits[:, 1] - limits[:, 0]))
+    def tracked(backend):
+        def capture():
+            env, data = backend.env, backend.data
+            truth.append([*data.qpos[env.block_q:env.block_q + 7], *data.site_xpos[env.site],
+                          *backend.model.body("tray").pos, env.steps / env.config["horizon"]])
+            joints.append(data.qpos[env.qids].copy())
+        real = backend.send_targets
+        backend.send_targets = lambda q, t: (real(q, t), capture())
+        capture()  # Reset state: what the policy sees before action 0.
+        return expert(backend)
 
-    kept, _ = session(tmp_path, [" "] + [None] * 600 + ["\x1b"], expert)
+    kept, _ = session(tmp_path, [" "] + [None] * 600 + ["\x1b"], tracked)
     manifest = json.loads((kept[0] / "xert_recording.json").read_text())
     assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
-    dataset = load_runtime_dataset(kept[0])
+    dataset = load_runtime_dataset(kept[0])  # finish() already ran verify_recording over every frame.
     flags = [dataset[i]["next.success"].item() for i in range(len(dataset))]
     assert flags[-1] and not any(flags[:-1]) and len(flags) == manifest["task_outcome"]["steps"]
+    feature = dataset.features["observation.environment_state"]
+    native = BenchBackend(load_spec(SPEC), 0).env.metadata()["observation_names"]
+    assert feature["dtype"] == "float32" and feature["names"] == native[12:]  # P5.3 looks these names up.
+    observed = np.stack([dataset[i]["observation.environment_state"].numpy() for i in range(len(dataset))])
+    # Frame k holds the state captured before action k, the same instant as its observation.state.
+    np.testing.assert_array_equal(observed, np.asarray(truth[:-1], dtype=np.float32))
+    np.testing.assert_array_equal(np.stack([dataset[i]["observation.state"].numpy() for i in range(len(dataset))]),
+                                  np.asarray(joints[:-1], dtype=np.float32))
+    assert np.ptp(observed[:, 2]) > .01  # The block really moves.
     del dataset
+
+
+def test_viewer_keys_join_the_console_keys_without_a_window(monkeypatch):
+    for code in (32, 68, 256, 65):  # GLFW Space, D, Escape, A
+        teleop.viewer_key(code)
+    monkeypatch.setattr(teleop.sys, "platform", "linux")  # Queue only; never read the real console.
+    assert [teleop.read_key() for _ in range(4)] == [" ", "d", "\x1b", None]
+    seen, fake = {}, SimpleNamespace(launch_passive=lambda model, data, **kw: seen.update(kw) or SimpleNamespace(
+        sync=lambda: None, close=lambda: None))
+    monkeypatch.setitem(sys.modules, "mujoco.viewer", fake)
+    monkeypatch.setattr(mujoco, "viewer", fake, raising=False)
+    teleop.open_viewer(BenchBackend(load_spec(SPEC), 0).model).show(BenchBackend(load_spec(SPEC), 0).data)
+    assert seen["key_callback"] is teleop.viewer_key
+
+
+@pytest.mark.skipif(os.environ.get("XERT_VIEWER_TEST") != "1",
+                    reason="opens a real MuJoCo window; set XERT_VIEWER_TEST=1 on a desktop to run it")
+def test_viewer_mirrors_bench_and_never_touches_physics(tmp_path):
+    pytest.importorskip("lerobot")
+    from xert.data.recorder import load_runtime_dataset
+    keys, shown = [" ", None, None, None, " ", None, "\x1b"], []
+    viewer = teleop.open_viewer(BenchBackend(load_spec(SPEC), 0).model)
+    try:
+        def timed(data):
+            start = time.perf_counter()
+            viewer.show(data)
+            shown.append((time.perf_counter() - start, data.qpos.copy()))
+        with_viewer, _ = session(tmp_path / "viewer", keys, viewer=SimpleNamespace(show=timed))
+    finally:
+        viewer.close()
+    without, _ = session(tmp_path / "plain", keys)
+    seconds = [s for s, _ in shown]
+    print(f"viewer show: n={len(seconds)} max={max(seconds) * 1e3:.2f} ms")
+    assert len(shown) == 1 + 4  # Episode start, then once per recorded tick. Timing is printed, not asserted.
+    np.testing.assert_array_equal(viewer.data.qpos, shown[-1][1])
+    a, b = load_runtime_dataset(with_viewer[0]), load_runtime_dataset(without[0])
+    for i in range(len(a)):
+        for key in ("observation.state", "observation.environment_state", "action"):
+            np.testing.assert_array_equal(a[i][key].numpy(), b[i][key].numpy())
+    del a, b
 
 
 def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch):
@@ -150,7 +242,10 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
                            calibration=path, output=tmp_path / "out")
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: pytest.fail("Camera opened"))
     monkeypatch.setattr(teleop.sys, "platform", "win32")  # input checks must not depend on the CI host
-    for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench")):
+    grasp = neutral["sites"]["grasp"]
+    moved = {"sites": {**neutral["sites"], "grasp": {**grasp, "position": np.add(grasp["position"], .01).tolist()}}}
+    for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench"),
+                         (moved, "reset grasp")):  # A bench_reset label alone is not trusted.
         path.write_text(json.dumps({**neutral, **bad}))
         with pytest.raises(ValueError, match=message):
             cli.execute(args)
@@ -162,6 +257,22 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
     closed.clear()
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", camera)
     monkeypatch.setattr(teleop, "run_session", lambda source, spec, output, make_mapper, **kw: seen.update(kw))
+    monkeypatch.setattr(teleop, "open_viewer", lambda model: pytest.fail("Viewer opened without --viewer"))
     cli.execute(args)
     assert closed and seen["provenance"]["kind"] == "webcam" and seen["provenance"]["mirrored"] is False
     assert seen["provenance"]["calibration_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert seen["viewer"] is None
+
+    def broken_close():
+        raise OSError("window")
+
+    def failing_session(*a, **kw):
+        assert kw["viewer"] is window
+        raise RuntimeError("session failed")
+
+    window, closed[:] = SimpleNamespace(close=lambda: closed.append("viewer") or broken_close()), []
+    monkeypatch.setattr(teleop, "open_viewer", lambda model: window)
+    monkeypatch.setattr(teleop, "run_session", failing_session)
+    with pytest.raises(RuntimeError, match="session failed") as error:
+        cli.execute(SimpleNamespace(**vars(args), viewer=True))
+    assert closed == [True, "viewer"] and "OSError: window" in error.value.__notes__[-1]

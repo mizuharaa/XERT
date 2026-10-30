@@ -17,6 +17,7 @@ class BenchBackend:
                 not np.array_equal(spec.position_limits, self.env.limits)):
             raise ValueError("Spec does not describe the bench arm joints, limits and control rate")
         self.spec, self.model, self.data = spec, self.env.model, self.env.data
+        self.object_names = self.env.metadata()["observation_names"][12:]  # The P1.4 ACT environment_state split.
         self.env.reset(seed)
         self.info, self.closed = None, False
 
@@ -29,6 +30,10 @@ class BenchBackend:
             raise RuntimeError("Backend is closed")
         return JointState(self.data.qpos[self.env.qids].copy(), self.data.qvel[self.env.dids].copy(),
                           float(self.data.time))
+
+    def object_state(self):
+        """Native observation after the 12 joint entries: block pose, grasp, tray and time fraction."""
+        return self.env._obs()[12:].tolist()  # ponytail: private accessor; the native env has no public one.
 
     def send_targets(self, q, t_cmd):
         if self.closed:

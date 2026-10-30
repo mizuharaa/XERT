@@ -35,12 +35,13 @@ def load_runtime_dataset(root, repo_id="xert/runtime"):
     return dataset
 
 
-def _features(spec, task_success=False):
+def _features(spec, task_success=False, environment_names=None):
     def vector(names, dtype="float32"):
         return {"dtype": dtype, "shape": (len(names),), "names": names}
     positions = [f"{name}.pos" for name in spec.joint_names]
     velocities = [f"{name}.vel" for name in spec.joint_names]
     features = {"observation.state": vector(positions), "action": vector(positions),
+                **({"observation.environment_state": vector(list(environment_names))} if environment_names else {}),
                 "xert.observation_velocity": vector(velocities),
                 "xert.next_observation": vector(positions), "xert.next_velocity": vector(velocities),
                 "xert.times": vector(list(TIMES), "float64"),
@@ -66,9 +67,11 @@ class RuntimeRecorder:
     retain a private staging directory and flushed journal, never a final dataset.
     ponytail: one episode per transaction; the P4.1 teleop session publishes one dataset per episode.
     task_success=True adds `next.success`; every record then needs an explicit boolean "success".
+    environment_state=(names, initial values) adds `observation.environment_state` (LeRobot name); every record
+    then needs "environment_state" after its step, stored pre-action on the next frame exactly like observation.state.
     """
     def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None,
-                 task_success=False):
+                 task_success=False, environment_state=None):
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
         self.output = Path(output).absolute()
         if self.output.exists() or self.output.is_symlink():
@@ -82,8 +85,9 @@ class RuntimeRecorder:
         self.spec = load_spec(spec_path, contents=spec_bytes)
         if self.spec.control_hz != int(self.spec.control_hz):
             raise ValueError("LeRobot requires an integer control rate")
-        self.features = _features(self.spec, task_success)
+        self.features = _features(self.spec, task_success, environment_state and environment_state[0])
         self.previous = self._state(initial_state.q, initial_state.qd, initial_state.t)
+        self.environment = environment_state and self._environment(environment_state[1])
         self.task, self.repo_id = task, repo_id
         self.count, self.closed = 0, False
         self.dataset = self.journal = None
@@ -128,6 +132,12 @@ class RuntimeRecorder:
         if result.shape != self.spec.rest.shape or not np.isfinite(result).all():
             raise ValueError("Recorded joint vectors must be finite and follow spec joint order")
         return result.copy()
+
+    def _environment(self, value):
+        result = np.asarray(value, dtype=np.float32)
+        if result.shape != self.features["observation.environment_state"]["shape"] or not np.isfinite(result).all():
+            raise ValueError("Environment state must be finite and follow its declared names")
+        return result
 
     def _state(self, q, qd, t):
         if not np.isfinite(t) or t < 0:
@@ -198,19 +208,23 @@ class RuntimeRecorder:
             if type(record["success"]) is not bool:
                 raise ValueError("success must be an explicit boolean")
             payload["next.success"] = scalar(record["success"], bool)
-        return payload, state
+        environment = None
+        if "observation.environment_state" in self.features:
+            environment = self._environment(record["environment_state"])
+            payload["observation.environment_state"] = self.environment.copy()
+        return payload, state, environment
 
     def __call__(self, record):
         if self.closed:
             raise RuntimeError("Recorder is closed")
         try:
-            payload, state = self._encode(record)
+            payload, state, environment = self._encode(record)
             encoded = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in payload.items()}
             self.journal.write(json.dumps({"frame": encoded, "runtime": record}, allow_nan=False) + "\n")
             self.journal.flush()  # Recoverable journal even before LeRobot saves its episode buffer.
             self.dataset.add_frame(payload)
             self.count += 1
-            self.previous, self.last_command = state, record["t_command"]
+            self.previous, self.environment, self.last_command = state, environment, record["t_command"]
         except BaseException as exc:
             self._abort_preserving(exc)
             raise

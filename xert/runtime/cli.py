@@ -23,6 +23,8 @@ def add_commands(commands):
                                 help="Neutral pose = pick-and-place bench reset pose (required by teleop)")
         else:
             parser.add_argument("--calibration", type=Path, required=True)
+        if name == "teleop":
+            parser.add_argument("--viewer", action="store_true", help="Open a read-only MuJoCo window of the bench")
         if name == "latency":
             parser.add_argument("--duration", type=float, default=300)
     parser = commands.add_parser("record-motion", help="Explicitly open the selected webcam and save landmarks, not images")

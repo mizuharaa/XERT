@@ -1,10 +1,13 @@
 """Terminal teleoperation on the pick-and-place bench: one LeRobot v3 dataset per kept episode."""
 import hashlib
+import queue
 import shutil
 import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+
+import numpy as np
 
 from xert.spec import load_spec
 
@@ -23,16 +26,45 @@ def key_action(key, recording):
     return None
 
 
+VIEWER_KEYS = queue.SimpleQueue()  # Keys typed while the viewer window has focus.
+
+
+def viewer_key(code):
+    """MuJoCo key_callback (GLFW codes, viewer thread): Space, D and Escape join the console keys."""
+    if key := {32: " ", 68: "d", 256: "\x1b"}.get(code):
+        VIEWER_KEYS.put(key)
+
+
 def read_key():
+    try:
+        return VIEWER_KEYS.get_nowait()
+    except queue.Empty:
+        pass
     if sys.platform == "win32":
         import msvcrt
         return msvcrt.getwch() if msvcrt.kbhit() else None
     return None  # ponytail: Windows console keys only; Ctrl-C still stops through finally elsewhere.
 
 
+def open_viewer(model):
+    """MuJoCo passive window on a viewer-side MjData. Each tick copies the bench pose into it, so mouse
+    perturbations and UI edits in the window never reach the physics that the native rule judges."""
+    import mujoco
+    import mujoco.viewer
+    data = mujoco.MjData(model)
+    handle = mujoco.viewer.launch_passive(model, data, key_callback=viewer_key, show_left_ui=False,
+                                          show_right_ui=False)
+
+    def show(source):
+        data.qpos[:], data.time = source.qpos, source.time
+        mujoco.mj_forward(model, data)
+        handle.sync()  # No-op once the operator closes the window; the episode carries on.
+    return SimpleNamespace(data=data, show=show, close=handle.close)
+
+
 def run_session(source, spec_path, output, make_mapper, *, provenance, spec_bytes=None, keys=read_key,
-                clock=time.perf_counter, sleep=time.sleep):
-    """Caller owns `source`. Bench seed = kept-episode index, so a discarded attempt retries its seed."""
+                clock=time.perf_counter, sleep=time.sleep, viewer=None):
+    """Caller owns `source` and `viewer`. Bench seed = kept-episode index, so a discarded attempt retries its seed."""
     from xert.backends.bench import BenchBackend
     from xert.data.recorder import RuntimeRecorder
     from .loop import run_loop
@@ -53,14 +85,20 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
         mapper = make_mapper(backend)
         recorder = RuntimeRecorder(spec_path, backend.read_state(), output / f"episode_{seed:06d}", task=TASK,
                                    source={**provenance, "bench_seed": seed, "bench": backend.env.metadata()},
-                                   spec_bytes=spec_bytes, task_success=True)
+                                   spec_bytes=spec_bytes, task_success=True,
+                                   environment_state=(backend.object_names, backend.object_state()))
+        if viewer:
+            viewer.show(backend.data)
         end = []
 
         def step(record):
             if end:
                 return False  # E-stop hold tick after Escape; that recording is already ended.
             record["success"] = bool(backend.info["success"])
+            record["environment_state"] = backend.object_state()  # Same tick as record["q"]; stored pre-action.
             recorder(record)
+            if viewer:
+                viewer.show(backend.data)
             if record["success"] or backend.finished:
                 end.append("finish")
             elif pressed := key_action(keys(), recording=True):
@@ -80,9 +118,10 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
             if not recorder.closed:
                 recorder._abort_preserving(exc)
             raise
-        result = end[0] if end else "stop"
-        while result != "quit" and keys() is not None:
-            pass  # Drop keys buffered while the episode ended, so none starts the next one.
+        result, quit_after = end[0] if end else "stop", False
+        while result != "quit" and (key := keys()) is not None:
+            # Drop keys buffered while the episode ended, so none starts the next one; Escape quits after it.
+            quit_after = quit_after or key_action(key, recording=False) == "quit"
         if result == "discard":
             recorder.abort()
             shutil.rmtree(recorder.work)
@@ -97,6 +136,9 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                              "ended_by": "operator" if result == "stop" else "bench", "steps": info["steps"]})
             kept.append(recorder.output)
             print(f"Saved {recorder.output} success={info['success']} reason={info['failure_reason']}", flush=True)
+        if quit_after:
+            print("Escape after the episode ended: session over.", flush=True)
+            return kept
 
 
 def execute(args):
@@ -116,18 +158,27 @@ def execute(args):
     calibration_bytes, calibration = _calibration(args, model)
     if calibration.get("neutral_pose") != "bench_reset":
         raise ValueError("Teleop needs a bench-reset neutral calibration: xert calibrate --bench")
+    bench = BenchBackend(spec, 0)
 
     def make_mapper(backend):
         return CalibratedMapper(args.spec, args.profile, calibration, backend,
                                 spec_bytes=spec_bytes, profile_bytes=profile_bytes)
 
-    make_mapper(BenchBackend(spec, 0))  # Reject a non-bench spec or bad calibration before the camera opens.
+    make_mapper(bench)  # Reject a non-bench spec or bad calibration before the camera opens.
+    if not np.allclose(calibration["sites"]["grasp"]["position"], bench.data.site("grasp").xpos, rtol=0, atol=1e-6):
+        raise ValueError("Calibration grasp is not the bench reset grasp: xert calibrate --bench")
     provenance = {"kind": "webcam", "camera": args.camera, "mirrored": False, "model": model,
                   "profile": profile, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": calibration, "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
                   "success_rule": "native bench contact rule (cpp/src/env.cpp Env::step)", **source_provenance()}
-    source = WebcamSource(args.model, model["sha256"], camera=args.camera)
+    viewer = open_viewer(bench.model) if getattr(args, "viewer", False) else None
     try:
-        run_session(source, args.spec, args.output, make_mapper, provenance=provenance, spec_bytes=spec_bytes)
+        source = WebcamSource(args.model, model["sha256"], camera=args.camera)
+        try:
+            run_session(source, args.spec, args.output, make_mapper, provenance=provenance, spec_bytes=spec_bytes,
+                        viewer=viewer)
+        finally:
+            _close(source)
     finally:
-        _close(source)
+        if viewer:
+            _close(viewer)
