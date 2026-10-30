@@ -1,0 +1,21 @@
+{
+  "gate_path": "configs/gate.yaml",
+  "spec_path": "xert/spec/xlerobot_left.yaml",
+  "training_seeds": [0, 1, 2],
+  "evaluation_seeds": [10000, 10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009, 10010, 10011, 10012, 10013, 10014, 10015, 10016, 10017, 10018, 10019, 10020, 10021, 10022, 10023, 10024, 10025, 10026, 10027, 10028, 10029],
+  "control_subset_seed": 0,
+  "training": {
+    "model_type": "act",
+    "epochs": 20,
+    "hidden_dim": 32,
+    "batch_size": 128,
+    "chunk_size": 50,
+    "lr": 0.001,
+    "kl_weight": 0.01,
+    "val_fraction": 0.2,
+    "device": "cpu",
+    "temporal_ensemble": true,
+    "ensemble_decay": 0.01
+  },
+  "notes": "Fixed before any human demo exists: P1.3 ACT-style budget with its validation-selected chunk 50, three training seeds, thirty held-out bench seeds disjoint from teleop bench seeds (kept-episode indices). No sweep or tuning on gated data or rollout results."
+}
