@@ -210,6 +210,9 @@ def test_end_to_end_tiny_run(session, tmp_path, repo, monkeypatch):
     evaluation = json.loads((tmp_path / "run/B/seed_0/evaluation.json").read_text())
     assert [Path(path).name for path in evaluation["episodes"]] == ["episode_000002", "episode_000003"]
     metadata = json.loads((tmp_path / "run/A/seed_0/metadata.json").read_text())
+    from xert.backends.bench import BenchBackend
+    from xert.spec import load_spec
+    bench_state = BenchBackend(load_spec(SPEC), 0).env.metadata()["observation_names"][12:]
     assert metadata["config"]["observation_names"] == [f"{joint}.pos" for joint in (
-        "Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L")]
+        "Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L")] + bench_state
     assert report.read_text() == gx.report(rows, "p5.3_run")
