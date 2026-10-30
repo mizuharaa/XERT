@@ -10,7 +10,7 @@ XERT_LEDGER_PATH); no number is typed into this file.
 2. Of the rows left, keep the latest `time_utc` per (slice, experiment,
    embodiment, metric, phase, training seeds). Phase and training seeds are in
    the key because one experiment writes one row per sweep phase or training
-   seed; without them, two of three training seeds would silently disappear.
+   seed; without them, all but one training seed would silently disappear.
 3. Rows measured from a dirty working tree (`git_dirty: true`) are kept and
    labelled DIRTY. Their source cannot be rebuilt from the commit alone, so
    read the row's notes and its slice note before citing one.
