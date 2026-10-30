@@ -149,6 +149,7 @@ def test_cli_checks_inputs_before_camera_and_labels_webcam(tmp_path, monkeypatch
     args = SimpleNamespace(command="teleop", spec=SPEC, profile=PROFILE, model=model, camera=0,
                            calibration=path, output=tmp_path / "out")
     monkeypatch.setattr(webcam_mediapipe, "WebcamSource", lambda *a, **k: pytest.fail("Camera opened"))
+    monkeypatch.setattr(teleop.sys, "platform", "win32")  # input checks must not depend on the CI host
     for bad, message in (({"mirrored": True}, "unmirrored"), ({"neutral_pose": "spec_rest"}, "--bench")):
         path.write_text(json.dumps({**neutral, **bad}))
         with pytest.raises(ValueError, match=message):
