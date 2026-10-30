@@ -26,7 +26,7 @@ def source_provenance() -> dict:
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
     def git(*args):
-        return subprocess.check_output(["git", "-C", str(REPO_ROOT), *args],
+        return subprocess.check_output(["git", "--no-replace-objects", "-C", str(REPO_ROOT), *args],
                                        text=True, **options).strip()
 
     return {"git_commit": git("rev-parse", "HEAD"),

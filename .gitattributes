@@ -5,3 +5,5 @@ assets/xlerobot/LICENSE text eol=lf
 assets/xlerobot/xlerobot.xml text eol=lf
 assets/menagerie/** -text
 results/** -text
+configs/gate.yaml -text
+configs/gate_experiment.json -text

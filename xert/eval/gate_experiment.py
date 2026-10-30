@@ -35,7 +35,7 @@ def preregistered(path):
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
     def git(*args, data=None):
-        return subprocess.run(["git", "-C", str(root), *args], input=data, capture_output=True,
+        return subprocess.run(["git", "--no-replace-objects", "-C", str(root), *args], input=data, capture_output=True,
                               **options).stdout.decode().strip()
 
     data = path.read_bytes()  # Hash, compare and parse exactly these bytes.
