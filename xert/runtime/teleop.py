@@ -103,10 +103,10 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
             if not recorder.closed:
                 recorder._abort_preserving(exc)
             raise
-        result = end[0] if end else "stop"
+        result, quit_after = end[0] if end else "stop", False
         while result != "quit" and (key := keys()) is not None:
-            # Drop keys buffered while the episode ended, so none starts the next one; Escape still quits.
-            result = "quit" if key_action(key, recording=False) == "quit" else result
+            # Drop keys buffered while the episode ended, so none starts the next one; Escape quits after it.
+            quit_after = quit_after or key_action(key, recording=False) == "quit"
         if result == "discard":
             recorder.abort()
             shutil.rmtree(recorder.work)
@@ -121,6 +121,9 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                              "ended_by": "operator" if result == "stop" else "bench", "steps": info["steps"]})
             kept.append(recorder.output)
             print(f"Saved {recorder.output} success={info['success']} reason={info['failure_reason']}", flush=True)
+        if quit_after:
+            print("Escape after the episode ended: session over.", flush=True)
+            return kept
 
 
 def execute(args):

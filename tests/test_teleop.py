@@ -37,15 +37,23 @@ def calibration(clock):
     return create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), BenchBackend(load_spec(SPEC), 0))
 
 
+def expert(backend):
+    # Scripted IK expert of the bench, still passed through the runtime safety clamps.
+    limits = backend.env.limits
+    return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
+                           (limits[:, 1] - limits[:, 0]))
+
+
 def session(tmp_path, keys, make_mapper=None, viewer=None):
-    """Keys are exact: every poll consumes one entry and each sequence ends with Escape at idle."""
+    """Listed keys are exact: every poll consumes one entry and each sequence ends with Escape. A callable polls freely."""
     clock = ScriptedClock()
     neutral = calibration(clock)
     make_mapper = make_mapper or (lambda backend: CalibratedMapper(SPEC, PROFILE, neutral, backend))
-    pending = iter(keys)
+    pending = None if callable(keys) else iter(keys)
     kept = teleop.run_session(ScriptedSource(clock), SPEC, tmp_path / "session", make_mapper, provenance=SCRIPTED,
-                              keys=lambda: next(pending), clock=clock, sleep=clock.sleep, viewer=viewer)
-    assert next(pending, "done") == "done"
+                              keys=keys if pending is None else lambda: next(pending), clock=clock, sleep=clock.sleep,
+                              viewer=viewer)
+    assert pending is None or next(pending, "done") == "done"
     return kept, tmp_path / "session"
 
 
@@ -88,11 +96,30 @@ def test_discard_writes_nothing_and_estop_never_publishes(tmp_path, monkeypatch)
     assert runs[-1][-1]["phase"] == "estop" and runs[-1][-2]["phase"] != "estop"
 
 
-def test_escape_buffered_as_episode_ends_still_quits(tmp_path):
+def test_escape_buffered_as_episode_ends_saves_then_quits(tmp_path):
     pytest.importorskip("lerobot")
-    # Space stops on tick 1; the drain drops "x" but Escape ends the session (the old drain discarded it).
-    kept, output = session(tmp_path, [" ", None, " ", "x", "\x1b"])
-    assert kept == [] and [path.name[:16] for path in output.iterdir()] == [".xert-recording-"]
+    # Space stops on tick 1; the drain drops "x", the episode is saved, then Escape ends the session.
+    kept, output = session(tmp_path, [" ", None, " ", "x", "\x1b", None])
+    assert [path.name for path in kept] == [path.name for path in output.iterdir()] == ["episode_000000"]
+
+
+def test_escape_on_the_success_tick_saves_then_quits(tmp_path):
+    pytest.importorskip("lerobot")
+    backends, drained = [], []
+
+    def keys():  # Start at idle, nothing while recording, Escape buffered on the tick the bench succeeds.
+        if not backends:
+            return " "
+        if not backends[-1].info["success"]:
+            return None
+        drained.append(len(drained))
+        assert len(drained) <= 2, "Session kept polling after Escape"
+        return "\x1b" if len(drained) == 1 else None
+
+    kept, output = session(tmp_path, keys, lambda backend: backends.append(backend) or expert(backend))
+    manifest = json.loads((kept[0] / "xert_recording.json").read_text())
+    assert [path.name for path in output.iterdir()] == ["episode_000000"] and len(backends) == 1
+    assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
 
 
 def test_stop_finalises_episode_that_round_trips(tmp_path):
@@ -115,13 +142,6 @@ def test_stop_finalises_episode_that_round_trips(tmp_path):
 def test_bench_contact_success_reaches_next_success(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset
-
-    def expert(backend):
-        # Scripted IK expert of the bench, still passed through the runtime safety clamps.
-        limits = backend.env.limits
-        return SimpleNamespace(map=lambda frame: limits[:, 0] + (np.asarray(backend.env.expert_action()) + 1) / 2 *
-                               (limits[:, 1] - limits[:, 0]))
-
     truth, joints = [], []  # Object state straight from MjData and the env, not the native observation.
 
     def tracked(backend):
