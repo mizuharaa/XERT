@@ -24,23 +24,30 @@ RULE = ("Pre-stated rule: B differs measurably from a comparator only if their p
         "and any overlap means no measurable difference.")
 
 
-def preregistered(gate_path):
-    """Return (sha256, commit) of a tracked, unmodified gate file; refuse anything else."""
-    gate_path = Path(gate_path).resolve()
-    if not gate_path.is_file():
-        raise ValueError(f"No gate file at {gate_path}; P5.2 must commit thresholds before any gated training")
+def preregistered(path):
+    """Return (sha256, commit, bytes) of a file committed in THIS repo whose disk bytes are that commit's blob."""
+    path, root = Path(path).resolve(), Path(ledger.REPO_ROOT).resolve()
+    if not path.is_file():
+        raise ValueError(f"No {path.name} at {path}; P5.2 thresholds and the experiment config must be committed first")
+    if not path.is_relative_to(root):
+        raise ValueError(f"{path} is outside the repository {root}; its commit would prove nothing here")
+    relative = path.relative_to(root).as_posix()
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
 
-    def git(*args):
-        return subprocess.run(["git", "-C", str(gate_path.parent), *args, "--", gate_path.name],
-                              capture_output=True, text=True, **options)
+    def git(*args, data=None):
+        return subprocess.run(["git", "-C", str(root), *args], input=data, capture_output=True,
+                              **options).stdout.decode().strip()
 
-    if git("ls-files", "--error-unmatch").returncode:
-        raise ValueError(f"{gate_path.name} is not committed; pre-registration requires a committed gate")
-    if git("status", "--porcelain").stdout.strip():
-        raise ValueError(f"{gate_path.name} has uncommitted changes; changed thresholds are a new experiment")
-    commit = git("log", "-1", "--format=%H").stdout.strip()  # The commit that introduced these exact bytes.
-    return hashlib.sha256(gate_path.read_bytes()).hexdigest(), commit
+    data = path.read_bytes()  # Hash, compare and parse exactly these bytes.
+    commit = git("log", "-1", "--format=%H", "--", relative)  # The commit that introduced the committed bytes.
+    if not commit:
+        raise ValueError(f"{relative} is not committed; pre-registration requires a commit")
+    if git("status", "--porcelain", "--", relative):
+        raise ValueError(f"{relative} has uncommitted changes; changed settings are a new experiment")
+    # Catches assume-unchanged/skip-worktree edits that status hides; hash-object applies the same eol filters.
+    if git("hash-object", "--stdin", f"--path={relative}", data=data) != git("rev-parse", f"{commit}:{relative}"):
+        raise ValueError(f"{relative} on disk differs from commit {commit}")
+    return hashlib.sha256(data).hexdigest(), commit, data
 
 
 def conditions(passed, train_seed, subset_seed):
@@ -109,7 +116,7 @@ def run(config_path, sessions, output, report_path):
     from xert.spec import load_spec
     from xle_workbench.learning import load_policy, train
     from xle_workbench.pipeline import wilson
-    config_bytes = Path(config_path).read_bytes()
+    config_sha256, config_commit, config_bytes = preregistered(config_path)
     config = json.loads(config_bytes)
     train_seeds, eval_seeds = config["training_seeds"], config["evaluation_seeds"]
     if (len(set(train_seeds)) < MIN_TRAIN_SEEDS or len(set(eval_seeds)) < MIN_EVAL_EPISODES
@@ -117,9 +124,16 @@ def run(config_path, sessions, output, report_path):
         raise ValueError(f"Require >= {MIN_TRAIN_SEEDS} distinct training seeds and >= {MIN_EVAL_EPISODES} eval seeds")
     if Path(output).exists() or Path(report_path).exists():
         raise ValueError("Output or report already exists; every run is fresh evidence")
-    gate_sha256, gate_commit = preregistered(config["gate_path"])
+    tag = "p5.3_" + Path(output).name
+    if any(row["experiment"] == tag for row in ledger.read_rows()):
+        raise ValueError(f"Ledger already has rows tagged {tag}; choose a new output name")
+    gate_file = Path(ledger.REPO_ROOT) / config["gate_path"]  # Relative paths mean this repo, not the cwd.
+    gate_sha256, gate_commit, gate_bytes = preregistered(gate_file)
+    provenance = ledger.source_provenance()
+    if provenance["git_dirty"]:
+        raise ValueError("Repository has uncommitted changes; commit them so every row names the exact source")
     try:  # JSON-compatible YAML subset, like the embodiment specs: {metric: {"min": x, "max": y}}.
-        thresholds = json.loads(Path(config["gate_path"]).read_bytes())
+        thresholds = json.loads(gate_bytes)
     except json.JSONDecodeError as exc:
         raise ValueError("gate.yaml uses the JSON-compatible YAML subset (quoted keys, no comments)") from exc
     if not isinstance(thresholds, dict) or not thresholds:
@@ -165,14 +179,13 @@ def run(config_path, sessions, output, report_path):
     from xert.backends.bench import BenchBackend
     probe = BenchBackend(spec, eval_seeds[0])
     bench_observation(probe, names, probe.env.metadata()["observation_names"])  # Refuse before any training.
-    provenance = ledger.source_provenance()
     output = Path(output)
     output.mkdir(parents=True)
-    tag = "p5.3_" + output.name
-    gate = {"gate_path": config["gate_path"], "gate_sha256": gate_sha256, "gate_commit": gate_commit}
-    common_paths = [output / "config.json", output / "verdicts.json", Path(config["gate_path"])]
+    gate = {"gate_path": config["gate_path"], "gate_sha256": gate_sha256, "gate_commit": gate_commit,
+            "experiment_config_sha256": config_sha256, "experiment_config_commit": config_commit}
+    common_paths = [output / "config.json", output / "verdicts.json", gate_file]
     (output / "config.json").write_text(json.dumps({
-        **config, **provenance, **gate, "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
+        **config, **provenance, **gate,
         "sessions": [str(s) for s in sessions], "observation_names": names,
         "action_names": episodes[0]["action_names"]}, indent=2), encoding="utf-8")
     (output / "verdicts.json").write_text(json.dumps(verdicts, indent=2, allow_nan=False), encoding="utf-8")
@@ -204,6 +217,7 @@ def run(config_path, sessions, output, report_path):
                 artifact_sha256={ledger.artifact_path(path): hashlib.sha256(path.read_bytes()).hexdigest()
                                  for path in artifacts},
                 condition=condition, successes=successes, train_episodes=len(split[condition]),
+                train_frames=sum(len(episodes[index]["actions"]) for index in split[condition]),
                 source_kinds=sorted(kinds), **gate,
                 notes=f"Condition {condition} ({LABELS[condition]}): XERT ACT-style policy on human teleop demos, "
                       "rolled out on held-out MuJoCo bench seeds. Simulation only; no hardware claim.")
@@ -231,23 +245,34 @@ def report(rows, experiment):
     seeds = sorted({seed for _, seed in by})
     if len(by) != len(rows) or set(by) != {(c, s) for c in CONDITIONS for s in seeds} or not seeds:
         raise ValueError(f"Experiment {experiment} lacks exactly one row per condition and training seed")
-    if len({(row["gate_sha256"], row["gate_commit"], tuple(row["seeds"]["eval"])) for row in rows}) != 1:
-        raise ValueError("Rows disagree on gate or evaluation seeds")
+    if len(seeds) < MIN_TRAIN_SEEDS:
+        raise ValueError(f"Experiment {experiment} has fewer than {MIN_TRAIN_SEEDS} training seeds")
+    if len({(row["gate_sha256"], row["gate_commit"], row["experiment_config_sha256"], row["experiment_config_commit"],
+             tuple(row["seeds"]["eval"])) for row in rows}) != 1:
+        raise ValueError("Rows disagree on gate, experiment config or evaluation seeds")
     for row in rows:
-        if row["value"] != row["successes"] / row["n"]:
-            raise ValueError(f"Row {row['id']} success count disagrees with its rate")
+        if (row["n"] < MIN_EVAL_EPISODES or row["n"] != len(row["seeds"]["eval"])
+                or row["value"] != row["successes"] / row["n"] or row["ci95"] != wilson(row["successes"], row["n"])):
+            raise ValueError(f"Row {row['id']} has too few trials, or its count, rate and interval disagree")
+        if not row["source_kinds"] or set(row["source_kinds"]) - set(HUMAN_SOURCES):
+            raise ValueError(f"Row {row['id']} was not trained only on human demonstrations")
     first = rows[0]
     lines = [f"# P5.3 quality-gate experiment ({experiment})", "",
-             "Generated from `results/ledger.jsonl` rows; MuJoCo bench (`xlerobot_left`) simulation only.", "",
+             f"Generated from `{ledger.artifact_path(ledger.ledger_path())}` rows; "
+             "MuJoCo bench (`xlerobot_left`) simulation only.", "",
              f"Gate `{first['gate_path']}` sha256 `{first['gate_sha256']}`, committed in `{first['gate_commit']}`. "
-             f"Same {first['n']} held-out bench seeds for every model.", "", RULE, "",
-             "| Condition | Training seed | Train episodes | Successes / trials | Wilson 95% | Ledger row |",
-             "|---|---|---|---|---|---|"]
+             f"Experiment config sha256 `{first['experiment_config_sha256']}`, committed in "
+             f"`{first['experiment_config_commit']}`. Same {first['n']} held-out bench seeds for every model.", "",
+             RULE, "", "C matches B in demo count, not in frames or gradient steps; a gate on frames or duration "
+             "changes B's training volume relative to C (see Train frames).", "",
+             "| Condition | Training seed | Train episodes | Train frames | Successes / trials | Wilson 95% | Ledger row |",
+             "|---|---|---|---|---|---|---|"]
     pooled = {}
     for condition in CONDITIONS:
         for seed in seeds:
             row = by[condition, seed]
-            lines.append(f"| {condition} | {seed} | {row['train_episodes']} | {row['successes']} / {row['n']} | "
+            lines.append(f"| {condition} | {seed} | {row['train_episodes']} | {row['train_frames']} | "
+                         f"{row['successes']} / {row['n']} | "
                          f"[{row['ci95'][0]:.4f}, {row['ci95'][1]:.4f}] | {row['id']} |")
         wins, count = (sum(by[condition, seed][key] for seed in seeds) for key in ("successes", "n"))
         pooled[condition] = (wins / count, wilson(wins, count), wins, count)
@@ -263,8 +288,8 @@ def report(rows, experiment):
         lines.append("- " + ("The same-size control agrees, so the effect follows which demos were kept, not only "
                              "how many." if versus_c == versus_a else
                              "The same-size control does not agree, so this does not separate cleaner data from less data."))
-    lines += ["", "Pooled intervals count every rollout as independent although models share evaluation states; "
-              "treat them as approximate. This is not a hardware result and does not tune any threshold."]
+    lines += ["", "Pooled intervals count every rollout as independent although models share evaluation states, "
+              "and ignores variation between training seeds; treat them as approximate. This is not a hardware result and does not tune any threshold."]
     return "\n".join(lines) + "\n"
 
 
