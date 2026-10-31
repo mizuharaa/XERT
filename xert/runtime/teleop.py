@@ -121,7 +121,11 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
         result, quit_after = end[0] if end else "stop", False
         while result != "quit" and (key := keys()) is not None:
             # Drop keys buffered while the episode ended, so none starts the next one; Escape quits after it.
-            quit_after = quit_after or key_action(key, recording=False) == "quit"
+            # A `d` on a bench-ended episode's final tick discards it, as during recording.
+            pressed = key_action(key, recording=True)
+            quit_after = quit_after or pressed == "quit"
+            if pressed == "discard" and result == "finish":
+                result = "discard"
         if result == "discard":
             recorder.abort()
             shutil.rmtree(recorder.work)
