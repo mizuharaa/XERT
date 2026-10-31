@@ -103,6 +103,12 @@ def test_escape_buffered_as_episode_ends_saves_then_quits(tmp_path):
     assert [path.name for path in kept] == [path.name for path in output.iterdir()] == ["episode_000000"]
 
 
+def test_d_buffered_after_a_space_stop_discards_then_escape_quits(tmp_path):
+    pytest.importorskip("lerobot")
+    kept, output = session(tmp_path, [" ", None, " ", "d", "\x1b", None])
+    assert kept == [] and list(output.iterdir()) == []
+
+
 def test_escape_on_the_success_tick_saves_then_quits(tmp_path):
     pytest.importorskip("lerobot")
     backends, drained = [], []
