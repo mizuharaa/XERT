@@ -122,6 +122,21 @@ def test_escape_on_the_success_tick_saves_then_quits(tmp_path):
     assert manifest["task_outcome"]["success"] and manifest["task_outcome"]["ended_by"] == "bench"
 
 
+@pytest.mark.parametrize("after_success", [["d", None, "\x1b"], ["d", "\x1b", None]], ids=["d", "d+esc"])
+def test_d_on_the_success_tick_discards(tmp_path, after_success):
+    pytest.importorskip("lerobot")
+    backends, pending = [], iter(after_success)
+
+    def keys():  # Start at idle, nothing while recording, then the scripted keys from the tick the bench succeeds.
+        if not backends:
+            return " "
+        return None if not backends[-1].info["success"] else next(pending)
+
+    kept, output = session(tmp_path, keys, lambda backend: backends.append(backend) or expert(backend))
+    assert kept == [] and list(output.iterdir()) == [] and len(backends) == 1
+    assert next(pending, "done") == "done"
+
+
 def test_stop_finalises_episode_that_round_trips(tmp_path):
     pytest.importorskip("lerobot")
     from xert.data.recorder import load_runtime_dataset, verify_recording
