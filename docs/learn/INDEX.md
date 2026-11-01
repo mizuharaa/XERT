@@ -14,6 +14,7 @@ or recorded evidence; a successful simulation check is not a hardware result.
 | P1.4 | [Official ACT comparison](P1.4.md) | Which differences prevent attributing a result to the architecture alone? |
 | P2.1 | [Lossless LeRobot export](P2.1.md) | Why keep the terminal observation and both executed and corrective actions? |
 | P2.2 | [Direct runtime recording](P2.2.md) | How do you distinguish a missing timestamp from zero without losing precision? |
+| P2.3 | [Offline sim cameras (optional)](P2.3.md) | Why render after recording instead of during teleop? |
 | P3.1 | [Embodiment specifications](P3.1.md) | Why must a requested position fit both joint and actuator limits? |
 | P3.2 | [Generalized inverse kinematics](P3.2.md) | What does damping do when a robot cannot easily move in the requested direction? |
 | P3.3 | [Command safety](P3.3.md) | Why is clipping a position insufficient to limit speed and acceleration? |
