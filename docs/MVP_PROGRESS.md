@@ -31,6 +31,7 @@ checklist, not a robotics performance metric; partial implementations do not cou
 | P5.1 | Partial | [Reviewed per-episode gate metrics](learn/P5.1.md); distributions on collected demonstrations still required |
 | P5.2 | Pending | Thresholds committed before gated training |
 | P5.3 | Partial | [Reviewed pre-registered all/gated/random-control harness](learn/P5.3.md); needs P4.2 demos and committed P5.2 thresholds |
+| P6 | Prep only | [Dry-run SO-101 backend](learn/P6.md): no bus or motor access, joint map all TBD; P6.2 blockers recorded. Hardware bring-up is owner-only. Not counted in the simulation checkpoint |
 | P7 | Partial | [Packaging](learn/P7.md): README, `scripts/resume_numbers.py` and the notes index are done; the demo video is pending. Not counted in the simulation checkpoint |
 
 Accepted slices: P0.1–P0.3, P1.1–P1.4, P2.1–P2.2 and P3.1–P3.4.

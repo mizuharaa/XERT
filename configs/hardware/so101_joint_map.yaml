@@ -1,0 +1,32 @@
+{
+  "robot": "so101",
+  "status": "template: every measured value is TBD; dry-run only until P6.1 measures them on the real arm",
+  "documented_from": "LeRobot 0.6.1 lerobot/robots/so_follower/so_follower.py:50-60 (motor names, ids 1-6, model sts3215, norm modes) and config_so_follower.py:42 (use_degrees=True default, so body joints read in degrees, gripper in range_0_100)",
+  "conversion": "motor = sign * units_per_rad * sim_rad + zero_offset; min/max in motor units; max_speed in motor units/s; max_accel in motor units/s^2",
+  "joints": [
+    {"joint": "shoulder_pan", "motor": "shoulder_pan", "id": 1, "units": "degrees",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"},
+    {"joint": "shoulder_lift", "motor": "shoulder_lift", "id": 2, "units": "degrees",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"},
+    {"joint": "elbow_flex", "motor": "elbow_flex", "id": 3, "units": "degrees",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"},
+    {"joint": "wrist_flex", "motor": "wrist_flex", "id": 4, "units": "degrees",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"},
+    {"joint": "wrist_roll", "motor": "wrist_roll", "id": 5, "units": "degrees",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"},
+    {"joint": "gripper", "motor": "gripper", "id": 6, "units": "range_0_100",
+     "sign": "TBD (not measured)", "units_per_rad": "TBD (not measured)", "zero_offset": "TBD (not measured)",
+     "min": "TBD (not measured)", "max": "TBD (not measured)",
+     "max_speed": "TBD (not measured)", "max_accel": "TBD (not measured)"}
+  ]
+}

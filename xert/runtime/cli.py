@@ -32,6 +32,8 @@ def add_commands(commands):
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--duration", type=float, default=30)
+    from .hw_dry_run import add_command
+    add_command(commands)
 
 
 def escape_pressed():
@@ -109,6 +111,9 @@ def _calibration(args, model):
 def execute(args):
     if args.command == "record-motion":
         return record_motion(args)
+    if args.command == "hw-dry-run":
+        from .hw_dry_run import execute as hw_dry_run
+        return hw_dry_run(args)
     if args.command == "teleop":
         from .teleop import execute as teleop
         return teleop(args)
