@@ -72,6 +72,8 @@ class RuntimeRecorder:
     """
     def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None,
                  task_success=False, environment_state=None):
+        if getattr(initial_state, "measured", True) is False:
+            raise ValueError("Refusing to record commanded (not measured) state as observations")
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
         self.output = Path(output).absolute()
         if self.output.exists() or self.output.is_symlink():

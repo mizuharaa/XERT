@@ -14,6 +14,7 @@ from test_runtime import frame
 from xert.backends.so101_hw_backend import TBD, CommandedState, SO101HardwareBackend, load_joint_map
 from xert.eval.ledger import ledger_path
 from xert.runtime.hw_dry_run import SimClock
+from xert.runtime.latency import summarize
 from xert.runtime.loop import run_loop
 from xert.safety import SafetyController
 from xert.spec import load_spec
@@ -197,3 +198,14 @@ def test_joint_map_ids_and_motor_names_are_validated():
         with pytest.raises(ValueError, match=message):
             load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=json.dumps(raw))
 
+
+def test_recorder_and_latency_refuse_commanded_state(tmp_path):
+    from xert.data.recorder import RuntimeRecorder
+    backend = SO101HardwareBackend(SPEC, TEMPLATE, echo=lambda _: None)
+    with pytest.raises(ValueError, match="not measured"):
+        RuntimeRecorder(ROOT / "xert/spec/so101.yaml", backend.read_state(), tmp_path / "out", task="x",
+                        source={"kind": "scripted"})
+    records, _ = loop_run(backend, SPEC.rest + .1)
+    assert any(r["latency_sample"] for r in records) and all(r["state_measured"] is False for r in records)
+    with pytest.raises(ValueError, match="measured state"):
+        summarize(records, require_webcam=False)

@@ -69,6 +69,8 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
                       "phase": command.phase, "valid_motion": bool(valid), "latency_sample": bool(sample),
                       "handedness_scores": {} if frame is None else {name: h.handedness_score for name, h in frame.hands.items()},
                       "tracking_confidence": None, "deadline_overrun": bool(applied > deadline + dt)}
+            if getattr(state, "measured", True) is False:
+                record["state_measured"] = False  # Only unmeasured state is marked; sim traces stay unchanged.
             records.append(record)
             finished = on_step is not None and on_step(record)
             if record["deadline_overrun"]:
