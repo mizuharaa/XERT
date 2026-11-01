@@ -1,6 +1,7 @@
 """P2.3 offline cameras on scripted bench data only: no human data, no ledger rows, no training result."""
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,9 @@ ASSETS = ROOT / "assets/xlerobot"
 def renderer():
     try:
         renderer = CameraRenderer()
-    except Exception as exc:  # No display/osmesa/EGL: skip, never open a visible window.
+    except Exception as exc:  # No display/osmesa/EGL: skip locally, never open a visible window.
+        if os.environ.get("CI"):
+            raise  # CI installs osmesa; a broken GL stack must fail, not skip.
         pytest.skip(f"No offscreen GL context: {exc!r}")
     yield renderer
     renderer.close()
@@ -62,6 +65,21 @@ def test_render_is_deterministic_for_a_fixed_state(renderer):
         assert image.shape == (128, 128, 3) and image.dtype == np.uint8
         np.testing.assert_array_equal(image, again[key])
     np.testing.assert_allclose(achieved["tray"], [.23, .11, .08])
+    np.testing.assert_allclose(achieved["block_position"], block[:3])
+
+
+def test_sites_are_hidden(renderer):
+    import mujoco
+    images, _ = renderer.render(np.array([0, .3, .5, .2, 0, .4]), np.array([.24, -.03, .096, 1, 0, 0, 0]))
+    # The grasp marker sits in front of the wrist camera; MuJoCo's default options would draw it.
+    renderer.renderer.update_scene(renderer.data, camera="wrist", scene_option=mujoco.MjvOption())
+    assert not np.array_equal(renderer.renderer.render(), images["observation.images.wrist"])
+
+
+def test_block_orientation_error_treats_q_and_minus_q_as_equal():
+    from xert.data.cameras import _error
+    q = np.array([.5, .5, .5, .5])
+    assert _error("block_orientation", q, -q) == 0 and _error("block_position", q, -q) == 1
 
 
 @pytest.fixture(scope="module")
@@ -88,7 +106,9 @@ def test_rendered_session_keeps_every_source_byte_and_round_trips(rendered):
         manifest = json.loads((copy / "xert_cameras.json").read_text())
         assert manifest["source_sha256"]["xert_recording.json"] == hashlib.sha256(
             (source / "xert_recording.json").read_bytes()).hexdigest()
-        assert max(manifest["reconstruction_max_error_m"].values()) <= manifest["tolerance_m"]
+        errors = manifest["reconstruction_max_error"]
+        assert set(errors) == {"grasp", "tray", "block_position", "block_orientation"}
+        assert max(errors.values()) <= manifest["tolerance"]
         original = LeRobotDataset("xert/runtime", root=source)
         loaded = LeRobotDataset("xert/runtime", root=copy)
         old, new = original.hf_dataset.data.table, loaded.hf_dataset.data.table

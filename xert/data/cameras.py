@@ -4,9 +4,9 @@ Each frame's scene is rebuilt from its recorded joint positions and block pose (
 qpos: the tray is static), so live teleop never renders and never risks a control deadline.
 Images are simulator renders, not real camera data.
 """
-import gc
 import hashlib
 import importlib.metadata
+import io
 import json
 import os
 from pathlib import Path
@@ -27,8 +27,11 @@ CAMERAS = {
 }
 SIZE = 128  # Square pixels: a 4x4 grid after ACT's stride-32 ResNet-18 (docs/learn/P2.3.md).
 BLOCK = [f"block.{axis}" for axis in ("x", "y", "z", "qw", "qx", "qy", "qz")]
-CHECKS = {"grasp": ["grasp.x", "grasp.y", "grasp.z"], "tray": ["tray.x", "tray.y", "tray.z"]}
-TOLERANCE_M = 1e-5  # Float32-rounded state moves the recorded grasp/tray far less than this.
+# Recorded values each rebuilt scene must reproduce, read by name independently of BLOCK's qpos order.
+CHECKS = {"grasp": ["grasp.x", "grasp.y", "grasp.z"], "tray": ["tray.x", "tray.y", "tray.z"],
+          "block_position": ["block.x", "block.y", "block.z"],
+          "block_orientation": ["block.qw", "block.qx", "block.qy", "block.qz"]}
+TOLERANCE = 1e-5  # Metres, or unit-quaternion components; float32 rounding stays far below this.
 AUTOMATIC = ("timestamp", "frame_index", "episode_index", "index", "task_index")  # The writer recomputes them.
 
 
@@ -76,7 +79,9 @@ class CameraRenderer:
         for name in CAMERAS:
             self.renderer.update_scene(self.data, camera=name, scene_option=self.option)
             images[f"observation.images.{name}"] = self.renderer.render().copy()
-        return images, {"grasp": self.data.site("grasp").xpos.copy(), "tray": self.data.body("tray").xpos.copy()}
+        block = self.data.body("block")
+        return images, {"grasp": self.data.site("grasp").xpos.copy(), "tray": self.data.body("tray").xpos.copy(),
+                        "block_position": block.xpos.copy(), "block_orientation": block.xquat.copy()}
 
     def close(self):
         self.renderer.close()
@@ -107,50 +112,62 @@ def _columns(features):
     return {part: [where[name] for name in names] for part, names in wanted.items()}
 
 
+def _error(name, achieved, recorded):
+    if name == "block_orientation":  # q and -q are the same rotation.
+        return float(min(np.max(np.abs(achieved - recorded)), np.max(np.abs(achieved + recorded))))
+    return float(np.max(np.abs(achieved - recorded)))
+
+
+def _read_table(root):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    return pa.concat_tables([pq.read_table(path) for path in sorted(root.glob("data/**/*.parquet"))])
+
+
 def _render_one(source, staging, renderer, repo_id):
+    from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     if _recorded_models(source) != {renderer.model_sha256}:
         raise ValueError(f"{source} was not recorded on the pinned bench model; its scene cannot be rebuilt")
-    original = LeRobotDataset(repo_id=repo_id, root=source, video_backend="pyav", download_videos=False)
-    try:
-        features = {key: value for key, value in original.meta.features.items() if key not in AUTOMATIC}
-        if any(value["dtype"] in ("image", "video") for value in features.values()):
-            raise ValueError("Dataset already has image or video features")
-        table, fps, robot_type = original.hf_dataset.data.table, original.fps, original.meta.robot_type
-        tasks = dict(zip(original.meta.tasks["task_index"], original.meta.tasks.index))
-    finally:
-        del original
-        gc.collect()  # Release Arrow memory maps (Windows).
+    # Metadata + raw Parquet only: LeRobotDataset(source) would build a Hugging Face Arrow cache.
+    meta = LeRobotDatasetMetadata(repo_id, root=source)
+    features = {key: value for key, value in meta.features.items() if key not in AUTOMATIC}
+    if any(value["dtype"] in ("image", "video") for value in features.values()):
+        raise ValueError("Dataset already has image or video features")
+    tasks = dict(zip(meta.tasks["task_index"], meta.tasks.index))
+    table = _read_table(source)
     where = _columns(features)
-    columns = {key: table.column(key).to_pylist() for key in [*features, "episode_index", "task_index"]}
     images = {f"observation.images.{name}": {"dtype": "image", "shape": (renderer.size, renderer.size, 3),
                                              "names": ["height", "width", "channels"]} for name in CAMERAS}
-    dataset = LeRobotDataset.create(repo_id=repo_id, root=staging, robot_type=robot_type, fps=fps,
-                                    features={**features, **images}, use_videos=False, video_backend="pyav")
+    dataset = LeRobotDataset.create(repo_id=repo_id, root=staging, robot_type=meta.robot_type, fps=meta.fps,
+                                    features={**features, **images}, use_videos=False)
+    episodes = table.column("episode_index").to_numpy()
+    bounds = [0, *(np.flatnonzero(np.diff(episodes)) + 1).tolist(), len(episodes)]
     digests, errors = [], dict.fromkeys(CHECKS, 0.)
     try:
-        for row in range(table.num_rows):
-            frame = {}
-            for key, feature in features.items():
-                value = columns[key][row]
-                frame[key] = value if feature["dtype"] == "string" else \
-                    np.asarray(value, dtype=feature["dtype"]).reshape(feature["shape"])
-            state = {part: np.asarray([frame[key][i] for key, i in entries], dtype=np.float64)
-                     for part, entries in where.items()}
-            rendered, achieved = renderer.render(state["joints"], state["block"])
-            for name in CHECKS:
-                errors[name] = max(errors[name], float(np.max(np.abs(achieved[name] - state[name]))))
-            digests.append({key: hashlib.sha256(image.tobytes()).hexdigest() for key, image in rendered.items()})
-            dataset.add_frame({**frame, **rendered, "task": tasks[columns["task_index"][row]]})
-            if row + 1 == table.num_rows or columns["episode_index"][row + 1] != columns["episode_index"][row]:
-                dataset.save_episode(parallel_encoding=False)
+        for start, stop in zip(bounds[:-1], bounds[1:]):  # One episode's rows in Python at a time.
+            rows = table.slice(start, stop - start)
+            columns = {key: rows.column(key).to_pylist() for key in [*features, "task_index"]}
+            for row in range(stop - start):
+                frame = {}
+                for key, feature in features.items():
+                    value = columns[key][row]
+                    frame[key] = value if feature["dtype"] == "string" else \
+                        np.asarray(value, dtype=feature["dtype"]).reshape(feature["shape"])
+                state = {part: np.asarray([frame[key][i] for key, i in entries], dtype=np.float64)
+                         for part, entries in where.items()}
+                rendered, achieved = renderer.render(state["joints"], state["block"])
+                for name in CHECKS:
+                    errors[name] = max(errors[name], _error(name, achieved[name], state[name]))
+                digests.append({key: hashlib.sha256(image.tobytes()).hexdigest() for key, image in rendered.items()})
+                dataset.add_frame({**frame, **rendered, "task": tasks[columns["task_index"][row]]})
+            dataset.save_episode(parallel_encoding=False)
     finally:
         dataset.finalize()
     del dataset
-    gc.collect()
-    if max(errors.values()) > TOLERANCE_M:
-        raise ValueError(f"Rebuilt scene disagrees with the recorded grasp/tray positions: {errors}")
-    verification = _verify(table, digests, staging, repo_id)
+    if max(errors.values()) > TOLERANCE:
+        raise ValueError(f"Rebuilt scene disagrees with the recorded grasp, tray or block: {errors}")
+    verification = _verify(table, digests, staging)
     for path in source.iterdir():  # Provenance sidecars (xert_recording.json, journal, roundtrip, export manifest).
         if path.is_file():
             shutil.copyfile(path, staging / path.name)
@@ -158,11 +175,12 @@ def _render_one(source, staging, renderer, repo_id):
         "version": 1, "backend": "mujoco", "hardware": False,
         "images": "offline MuJoCo renders of the simulated bench, not real camera data",
         "reconstruction": "qpos = recorded joint positions + block pose (float32), then mj_forward; tray is static",
-        "reconstruction_max_error_m": errors, "tolerance_m": TOLERANCE_M,
+        "reconstruction_max_error": errors, "tolerance": TOLERANCE,
         "cameras": {name: {**camera, "feature": f"observation.images.{name}", "height": renderer.size,
                            "width": renderer.size,
                            "xyaxes": _xyaxes(camera["pos"], camera["target"], camera["up"]).tolist()}
                     for name, camera in CAMERAS.items()},
+        "camera_placement": "chosen by eye in simulation; not the real SO-101 wrist camera mount or intrinsics",
         "hidden": "all sites (the grasp marker)",
         "image_storage": "LeRobot dtype image: lossless PNG in the data Parquet",
         "model_sha256": renderer.model_sha256, "mujoco_version": renderer.mujoco.__version__,
@@ -175,29 +193,28 @@ def _render_one(source, staging, renderer, repo_id):
     return verification
 
 
-def _verify(source_table, digests, root, repo_id):
-    """Every source column byte-identical; every image decodes through LeRobotDataset to the rendered pixels."""
-    import torch
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
-    dataset = LeRobotDataset(repo_id=repo_id, root=root, video_backend="pyav", download_videos=False)
-    try:
-        table = dataset.hf_dataset.data.table
-        for name in source_table.column_names:
-            if not table.column(name).equals(source_table.column(name)):
-                raise ValueError(f"Rendered dataset changed source column {name}")
-        if len(dataset) != len(digests):
-            raise ValueError("Rendered dataset frame count differs from source")
-        for row, expected in enumerate(digests):
-            frame = dataset[row]
-            for key, digest in expected.items():
-                pixels = (frame[key] * 255).round().to(torch.uint8).permute(1, 2, 0).numpy()
-                if hashlib.sha256(np.ascontiguousarray(pixels).tobytes()).hexdigest() != digest:
-                    raise ValueError(f"Stored image differs from the render: {key} frame {row}")
-        return {"frames": len(dataset), "episodes": dataset.num_episodes, "source_columns_identical": True,
-                "images_lossless": True}
-    finally:
-        del dataset
-        gc.collect()
+def _verify(source_table, digests, root):
+    """Stream the written Parquet: source columns byte-identical, every PNG decodes to the rendered pixels."""
+    import pyarrow.parquet as pq
+    from PIL import Image
+    offset = 0
+    for path in sorted(root.glob("data/**/*.parquet")):
+        with pq.ParquetFile(path) as parquet:  # Closed before the staging directory is renamed (Windows).
+            for batch in parquet.iter_batches(batch_size=64):
+                expected = source_table.slice(offset, batch.num_rows)
+                for name in source_table.column_names:
+                    if not batch.column(name).equals(expected.column(name).combine_chunks()):
+                        raise ValueError(f"Rendered dataset changed source column {name}")
+                for key in (f"observation.images.{name}" for name in CAMERAS):
+                    for row, image in enumerate(batch.column(key).field("bytes").to_pylist()):
+                        pixels = np.asarray(Image.open(io.BytesIO(image)).convert("RGB"))
+                        if hashlib.sha256(pixels.tobytes()).hexdigest() != digests[offset + row][key]:
+                            raise ValueError(f"Stored image differs from the render: {key} frame {offset + row}")
+                offset += batch.num_rows
+    if offset != len(digests) or offset != source_table.num_rows:
+        raise ValueError("Rendered dataset frame count differs from source")
+    return {"frames": offset, "episodes": len(set(source_table.column("episode_index").to_pylist())),
+            "source_columns_identical": True, "images_lossless": True}
 
 
 def render_cameras(source, output, size=SIZE, repo_id="xert/runtime"):
