@@ -3,6 +3,8 @@ import numpy as np
 
 
 def summarize(records, *, require_webcam=True):
+    if any(row.get("state_measured", True) is False for row in records):
+        raise ValueError("Latency needs measured state; these records echo commanded targets")
     samples = [row for row in records if row["latency_sample"]]
     if not samples:
         raise ValueError("No valid applied motion frames; no latency metric can be reported")
