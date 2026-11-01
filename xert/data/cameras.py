@@ -200,7 +200,8 @@ def _verify(source_table, digests, root):
     offset = 0
     for path in sorted(root.glob("data/**/*.parquet")):
         with pq.ParquetFile(path) as parquet:  # Closed before the staging directory is renamed (Windows).
-            for batch in parquet.iter_batches(batch_size=64):
+            # Single-threaded: threaded reads left Arrow's mimalloc holding memory per row group.
+            for batch in parquet.iter_batches(batch_size=64, use_threads=False):
                 expected = source_table.slice(offset, batch.num_rows)
                 for name in source_table.column_names:
                     if not batch.column(name).equals(expected.column(name).combine_chunks()):
