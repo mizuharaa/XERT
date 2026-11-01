@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from xert.safety.limits import braking_speed
 from .base import JointState
 
 TBD = "TBD (not measured)"
@@ -33,6 +34,8 @@ def load_joint_map(path, spec, *, dry_run, contents=None):
     for entry in joints:
         if set(entry) != set(DOCUMENTED + MEASURED):
             raise ValueError(f"Joint map fields must be exactly {DOCUMENTED + MEASURED}: {entry['joint']}")
+        if type(entry["id"]) is not int or not 1 <= entry["id"] <= 253 or not isinstance(entry["motor"], str) or not entry["motor"]:
+            raise ValueError(f"{entry['joint']}: motor id must be an integer 1..253 and the motor name nonempty")
         if any(entry[k] == TBD for k in MEASURED):
             if not dry_run:
                 raise ValueError(f"{entry['joint']}: TBD joint-map values are refused outside dry-run; measure them (P6.1)")
@@ -44,6 +47,8 @@ def load_joint_map(path, spec, *, dry_run, contents=None):
                 entry["max_speed"] <= 0 or entry["max_accel"] <= 0):
             raise ValueError(f"{entry['joint']}: sign must be +/-1; scale, speed, accel positive; min < max")
         mapped.append(entry)
+    if len({j["id"] for j in joints}) != len(joints):
+        raise ValueError("Motor ids must be distinct")
     return mapped
 
 
@@ -93,11 +98,18 @@ class SO101HardwareBackend:
                 continue
             wanted = self._to_motor(entry, q[i])
             last, v0 = self.motor[i], self.motor_velocity[i]
-            target = min(max(wanted, entry["min"]), entry["max"])
-            step = entry["max_accel"] * self.dt
-            v = np.clip((target - last) / self.dt, v0 - step, v0 + step)
-            v = float(np.clip(v, -entry["max_speed"], entry["max_speed"]))
-            motor = min(max(last + v * self.dt, entry["min"]), entry["max"])
+            lo, hi, vmax, amax, dt = entry["min"], entry["max"], entry["max_speed"], entry["max_accel"], self.dt
+
+            def brake(distance):  # The SafetyController rule, in this joint's motor units.
+                return float(braking_speed(np.array(distance), vmax, amax, dt))
+            # Same law as SafetyController.step: approach the bounded target, never faster than can still stop
+            # there, and keep room to stop before either motor limit; acceleration bounds the speed change.
+            error = min(max(wanted, lo), hi) - last
+            v = np.sign(error) * min(abs(error) / dt, brake(abs(error)))
+            low, high = max(v0 - amax * dt, -brake(last - lo)), min(v0 + amax * dt, brake(hi - last))
+            if low > high + 1e-9:
+                raise ValueError("Command history cannot satisfy the joint map's braking limits")
+            motor = last + float(np.clip(v, low, max(low, high))) * dt
             self.motor[i], self.motor_velocity[i] = motor, (motor - last) / self.dt
             applied[i] = (motor - entry["zero_offset"]) / (entry["sign"] * entry["units_per_rad"])
             records.append({"joint": name, "status": "mapped", "motor": entry["motor"], "id": entry["id"],

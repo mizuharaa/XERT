@@ -5,6 +5,22 @@ import numpy as np
 from .watchdog import Watchdog
 
 
+def braking_speed(distance, velocity_limit, acceleration_limit, dt):
+    """Fastest speed that can still stop within distance at this acceleration (exact discrete ticks)."""
+    # Exact discrete stopping distance; reserve space to decelerate on later ticks.
+    low = np.zeros_like(distance)
+    high = np.array(velocity_limit, dtype=float)
+    increment = acceleration_limit * dt
+    for _ in range(48):
+        speed = (low + high) / 2
+        count = np.maximum(np.ceil(speed / increment) - 1, 0)
+        travel = dt * ((count + 1) * speed - increment * count * (count + 1) / 2)
+        valid = travel <= np.maximum(distance, 0)
+        low = np.where(valid, speed, low)
+        high = np.where(valid, high, speed)
+    return low
+
+
 @dataclass
 class SafeCommand:
     q: np.ndarray
@@ -36,18 +52,7 @@ class SafetyController:
         return self.stopped
 
     def _braking_speed(self, distance):
-        # Exact discrete stopping distance; reserve space to decelerate on later ticks.
-        low = np.zeros_like(distance)
-        high = self.spec.velocity_limits.copy()
-        increment = self.spec.acceleration_limits * self.dt
-        for _ in range(48):
-            speed = (low + high) / 2
-            count = np.maximum(np.ceil(speed / increment) - 1, 0)
-            travel = self.dt * ((count + 1) * speed - increment * count * (count + 1) / 2)
-            valid = travel <= np.maximum(distance, 0)
-            low = np.where(valid, speed, low)
-            high = np.where(valid, high, speed)
-        return low
+        return braking_speed(distance, self.spec.velocity_limits, self.spec.acceleration_limits, self.dt)
 
     def step(self, target, *, t_now, t_capture=None, estop=False, watchdog_now=None):
         """Nominal t_now sets clamp dt; optional wall clock ages capture timestamps."""

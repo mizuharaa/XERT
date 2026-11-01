@@ -4,13 +4,17 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from test_motion_file import scripted_clip
+from test_runtime import frame
 from xert.backends.so101_hw_backend import TBD, CommandedState, SO101HardwareBackend, load_joint_map
 from xert.eval.ledger import ledger_path
+from xert.runtime.hw_dry_run import SimClock
+from xert.runtime.loop import run_loop
 from xert.safety import SafetyController
 from xert.spec import load_spec
 
@@ -29,6 +33,43 @@ def fixture_map(tmp_path, **override):
     path = tmp_path / "fixture_map.json"
     path.write_text(json.dumps(raw))
     return path
+
+
+# TEST FIXTURE (the QA probe's made-up values): 57.3 units/rad, 30 units/s, 60 units/s^2, limits +/-200.
+QA = {"sign": 1, "units_per_rad": 57.3, "zero_offset": 0.0, "min": -200.0, "max": 200.0,
+      "max_speed": 30.0, "max_accel": 60.0}
+
+
+def drive(backend, q, ticks, start=0):
+    motors, velocities = [], []
+    for k in range(start, start + ticks):
+        backend.send_targets(q, k / SPEC.control_hz)
+        motors.append(backend.last_sent[0]["motor_target"])
+        velocities.append(backend.motor_velocity[0])
+    return np.array(motors), np.array(velocities)
+
+
+class FreshFrames:
+    """A new scripted frame every read, stamped on the loop's simulated clock."""
+
+    def __init__(self, clock):
+        self.clock, self.n = clock, 0
+
+    def read(self):
+        self.n += 1
+        return frame(self.clock(), self.n)
+
+    def close(self):
+        pass
+
+
+def loop_run(backend, target, stop_after=None):
+    """run_loop through SafetyController in simulated time; returns records and joint-0 motor targets per tick."""
+    clock, sent = SimClock(), []
+    records = run_loop(FreshFrames(clock), backend, SimpleNamespace(map=lambda f: target), 3, clock=clock,
+                       sleep=clock.sleep, on_step=lambda r: sent.append(backend.last_sent[0].get("motor_target")),
+                       stop_requested=lambda: len(sent) == stop_after)
+    return records, sent
 
 
 def test_motion_mode_is_refused(tmp_path):
@@ -56,12 +97,12 @@ def test_sign_offset_limits_and_not_measured_state(tmp_path):
     backend.send_targets([.2, -1.2, 0, 0, 0, .5], 0.)
     sent = backend.last_sent
     assert np.isclose(sent[0]["motor_target"], -1 * 50 * .2 + 10) and not sent[0]["clamped"]
-    assert sent[1]["motor_target"] == 60.0 and sent[1]["clamped"]  # 70 wanted, above max 60
+    assert np.isclose(sent[1]["motor_target"], 60.0) and sent[1]["clamped"]  # 70 wanted, above max 60
     assert sent[5]["status"] == "unmapped"
     state = backend.read_state()
     assert state.measured is False and np.isclose(state.q[0], .2) and state.q[5] == .5
     backend.send_targets([1.5, 0, 0, 0, 0, 0], .04)  # -65 wanted, below min -40
-    assert backend.last_sent[0]["motor_target"] == -40.0 and backend.last_sent[0]["clamped"]
+    assert np.isclose(backend.last_sent[0]["motor_target"], -40.0) and backend.last_sent[0]["clamped"]
     assert np.isclose(backend.read_state().q[0], (-40 - 10) / -50)
 
 
@@ -111,6 +152,48 @@ main()
 bad = [m for m in sys.modules if m == "serial" or m.startswith(("serial.", "lerobot.robots", "lerobot.motors"))]
 assert not bad, bad
 """
-    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, capture_output=True, timeout=120,
-                   env={**os.environ, "XERT_LEDGER_PATH": str(tmp_path / "ledger.jsonl")})
+    child = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=120,
+                           env={**os.environ, "XERT_LEDGER_PATH": str(tmp_path / "ledger.jsonl")})
+    assert child.returncode == 0, child.stderr
     assert not (tmp_path / "ledger.jsonl").exists()
+
+
+def test_step_target_ramps_up_then_brakes_to_target_without_overshoot(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    q = SPEC.rest.copy()
+    q[0] = 1.0  # 57.3 motor units
+    motors, velocities = drive(backend, q, 100)
+    assert 0 < velocities[0] < velocities[1] < velocities[5] and np.isclose(velocities.max(), 30)
+    assert motors.max() <= 57.3 + 1e-9 and np.all(np.diff(motors) >= -1e-12)
+    assert np.isclose(motors[-1], 57.3) and velocities[-1] == 0
+
+
+def test_speed_change_never_exceeds_accel_limit(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    q = SPEC.rest.copy()
+    q[0] = 1.0
+    out, back = drive(backend, q, 20), drive(backend, -q, 100, start=20)  # reverse while still moving
+    motors, velocities = np.r_[out[0], back[0]], np.r_[out[1], back[1]]
+    assert np.all(np.abs(np.diff(np.r_[0, velocities])) <= 60 / SPEC.control_hz + 1e-9)
+    assert np.all(np.abs(velocities) <= 30 + 1e-9) and motors.min() >= -57.3 - 1e-9
+
+
+@pytest.mark.xfail(strict=True, reason="P6.2 BLOCKER (a): the backend never learns of the e-stop, so it keeps "
+                                       "moving toward SafetyController's held q instead of holding its last value")
+def test_estop_holds_last_hardware_command(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    target = SPEC.rest.copy()
+    target[0] = 1.5
+    records, sent = loop_run(backend, target, stop_after=30)
+    assert records[-1]["phase"] == "estop" and len(sent) == 31
+    assert sent[-1] == sent[-2] and backend.motor_velocity[0] == 0
+
+
+def test_joint_map_ids_and_motor_names_are_validated():
+    for bad, message in (({"id": 0}, "1..253"), ({"id": 254}, "1..253"), ({"id": True}, "1..253"),
+                         ({"id": "3"}, "1..253"), ({"motor": ""}, "nonempty"), ({"id": 1}, "distinct")):
+        raw = json.loads(TEMPLATE.read_text())
+        raw["joints"][2].update(bad)
+        with pytest.raises(ValueError, match=message):
+            load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=json.dumps(raw))
+
