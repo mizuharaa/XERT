@@ -1,11 +1,16 @@
 """SO-101 dry-run backend: no bus, no motors. Numeric joint maps here are made-up TEST FIXTURES, not measurements."""
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 import pytest
 
+from test_motion_file import scripted_clip
 from xert.backends.so101_hw_backend import TBD, CommandedState, SO101HardwareBackend, load_joint_map
+from xert.eval.ledger import ledger_path
 from xert.safety import SafetyController
 from xert.spec import load_spec
 
@@ -76,3 +81,36 @@ def test_hardware_clamp_applies_on_top_of_safety_controller(tmp_path):
     assert abs(-50 * command.q[0]) > abs(previous[0] - 10) + 1e-6
     assert backend.last_sent[0]["clamped"]
 
+
+def test_cli_writes_trace_and_no_ledger_row(tmp_path, monkeypatch, capsys):
+    from xert.__main__ import main
+    output = tmp_path / "run"
+    monkeypatch.setattr(sys, "argv", ["xert", "hw-dry-run", "--spec", str(ROOT / "xert/spec/so101.yaml"),
+                                      "--map", str(TEMPLATE), "--clip",
+                                      str(scripted_clip(tmp_path, [(.004 * k, .05 * k) for k in range(1, 9)])),
+                                      "--output", str(output)])
+    main()
+    assert "no ledger rows appended" in capsys.readouterr().out
+    assert not ledger_path().exists()
+    rows = [json.loads(line) for line in (output / "trace.jsonl").read_text().splitlines()]
+    assert rows and all(r["mode"] == "dry-run, no hardware" and r["state_measured"] is False for r in rows)
+    assert any(r["phase"] == "live" for r in rows)
+    for path in output.iterdir():
+        assert "so101_hw" not in path.read_text()
+
+
+def test_dry_run_never_imports_hardware_modules(tmp_path):
+    clip = scripted_clip(tmp_path, [(.01, .1)] * 3)
+    code = f"""
+import sys
+from xert.backends.so101_hw_backend import SO101HardwareBackend
+sys.argv = ["xert", "hw-dry-run", "--spec", r"{ROOT / 'xert/spec/so101.yaml'}", "--map", r"{TEMPLATE}",
+            "--clip", r"{clip}", "--output", r"{tmp_path / 'run'}"]
+from xert.__main__ import main
+main()
+bad = [m for m in sys.modules if m == "serial" or m.startswith(("serial.", "lerobot.robots", "lerobot.motors"))]
+assert not bad, bad
+"""
+    subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, capture_output=True, timeout=120,
+                   env={**os.environ, "XERT_LEDGER_PATH": str(tmp_path / "ledger.jsonl")})
+    assert not (tmp_path / "ledger.jsonl").exists()
