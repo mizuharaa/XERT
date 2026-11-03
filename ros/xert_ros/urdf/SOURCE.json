@@ -10,7 +10,7 @@
     "so101.urdf (this file, after the edits below)": "1bba57ad081b58f095bdd3686b7d68bfc58c98037da19c7c016b25ee42aa5ef3"
   },
   "edits": [
-    "mesh filename=\"assets/X.stl\" -> \"package://xert_ros/meshes/X.stl\" (68 references)",
+    "mesh filename=\"assets/X.stl\" -> \"package://xert_ros/meshes/X.stl\" (34 references)",
     "revolute joint lower/upper set to xert/spec/so101.yaml position_limits (upstream rounds them to 5-6 digits; largest change 3e-6 rad)",
     "revolute joint velocity 10 -> xert/spec/so101.yaml velocity_limits (1.0 rad/s); effort stays upstream 10",
     "one provenance comment added after the XML declaration"
