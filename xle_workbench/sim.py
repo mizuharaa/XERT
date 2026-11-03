@@ -154,7 +154,7 @@ class ManipulationEnv:
             if pos.shape != (2,) or not np.isfinite(pos).all() or np.any(np.abs(pos) > .4):
                 raise ValueError("object_position must be finite [x,y] inside +/-0.4 m")
             self.config["object_position"] = pos.tolist()
-        if self.config["robot"] not in ROBOTS:
+        if not isinstance(self.config["robot"], str) or self.config["robot"] not in ROBOTS:
             raise ValueError(f"robot must be one of {sorted(ROBOTS)}")
         self.robot = ROBOTS[self.config["robot"]]
         self.joints = self.robot["joints"]
