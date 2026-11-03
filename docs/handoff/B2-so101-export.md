@@ -33,26 +33,24 @@ logic, no ledger rows, no hardware, no camera device, no new dependency, no vend
   - The lerobot job was **not run locally**, because there is no `.venv-lerobot` on this PC. Its new tests import
     `test_so101_bench` (teleop and calibration modules), which `test_teleop.py` in that job also uses.
 
-## SO-101 camera definitions (placed by eye, NOT the real SO-101 camera)
+## SO-101 camera definitions (NOT measured on the real SO-101)
 
-| Camera | Body | pos | target | up | fovy |
-|---|---|---|---|---|---|
-| scene | world | (-0.02, -0.25, 0.40) | (0.30, 0.04, 0.15) | +z | 45 |
-| wrist | `gripper` | (-0.04, 0.06, -0.04) | (-0.008, 0, -0.12) | +z (gripper frame) | 75 |
+| Feature | Camera | Body | Pose | fovy |
+|---|---|---|---|---|
+| `observation.images.scene` | added `scene`, **by eye** | world | pos (-0.02, -0.25, 0.40), target (0.30, 0.04, 0.15), up +z | 45 |
+| `observation.images.wrist` | Menagerie `wrist_cam`, rendered as vendored | `camera_mount` (identity pose in `gripper`) | pos (-0.00296, 0.05436, -0.05310), quat (0.958280, -0.285792, -0.001556, 0.004547) | 61 |
 
-- Body names come from `assets/menagerie/robotstudio_so101/so101_xert.xml`.
-  - `gripper` is the wrist-roll body that carries the fixed jaw, `camera_mount`, `moving_jaw_so101_v1` and the
-    `grasp` site at (-0.0081, 0, -0.101). The jaw tips point along local -z.
+- The wrist entry is `{"model_camera": "wrist_cam"}`: the renderer renders the vendored camera by name, nothing is
+  re-derived. `test_so101_wrist_is_menageries_wrist_cam_and_the_fingerprint_is_the_recorded_one` reads pos, quat and
+  fovy from `so101_xert.xml` and checks the compiled camera against them.
 - The arm base is at (0.42, 0.04, 0.08) with yaw pi, at the far end of the table. So the scene camera sits past the
-  near end, off to -y, and faces it.
-- The same fovy as XLeRobot (45 / 75), so the image features match between robots.
+  near end, off to -y, and faces it. It was chosen by looking at three 192 px renders.
 - **Caveats.**
-  - The poses were chosen by looking at three 192 px renders (reset pose, two reach poses). They were not measured.
-  - They are not the real SO-101 wrist camera mount, offset or lens.
-  - Menagerie ships its own `wrist_cam` on `camera_mount` (fovy 61). It stays in the model (ncam = 3) and is not
-    rendered.
-  - `xert_cameras.json` keeps `"camera_placement": "chosen by eye in simulation; not the real SO-101 wrist camera
-    mount or intrinsics"` for both robots.
+  - Scene: placed by eye in simulation, not measured.
+  - Wrist: Menagerie's wrist_cam, plausibly the 32×32 UVC wrist mount; mount pose and fovy 61 are unsourced and not
+    measured on Daniel's arm; measure the real lens FOV before any sim-to-real claim.
+  - `xert_cameras.json` records the wrist camera's compiled body, pos, quat and fovy, and a per-robot
+    `camera_placement` with the caveats above. The XLeRobot manifest text is unchanged.
   - The SO-101 contact solver differs from XLeRobot's (slice B). Rendering does not depend on contacts.
 
 ## Measured results
@@ -84,7 +82,11 @@ logic, no ledger rows, no hardware, no camera device, no new dependency, no vend
   - `meta/stats.json` has equal values (canonical JSON identical), but its key order changes from run to run. Two
     runs of the same code already differ, so this is LeRobot's writer, not B2.
 - **Camera parameters and pixels.** `CameraRenderer()` at 3 fixed states: `cam_pos`, `cam_quat`, `cam_fovy`, the
-  body names, `model_sha256` and the sha256 of all 6 images are identical before and after (file `cmp` equal).
+  body names, `model_sha256` and the sha256 of all 6 images were identical before and after in my runs.
+  - **Image hashes are not a stable property.** Renders are not bit-exact across processes on this PC: QA saw ±1 on
+    one pixel between two runs of the BASE code, and HEAD sits within that noise. Camera parameters are the stable
+    evidence; `tests/test_cameras.py::test_xlerobot_camera_poses_stay_the_p2_3_poses` now pins them (QA's fovy
+    mutant 45→50 / 75→60 fails it).
 - **render-cameras output.** The same fixed XLeRobot scripted session (2 episodes, 3 and 2 frames) was rendered
   before and after.
   - 16 of 18 files are byte-identical, including `xert_cameras.json` with its source path removed.
@@ -122,9 +124,9 @@ Also run once in the combined env (no baseline, they do not import the changed m
 2. *Why rebuild the SO-101 scene in cameras.py instead of calling `so101_scene()`?* That function only returns a
    compiled model and an XML that does not parse back, and editing sim.py would change every recording's
    implementation hash, so the rebuild is refused unless it writes exactly the same XML.
-3. *How do you know XLeRobot output did not change?* The same inputs give identical camera parameters, pixel hashes,
-   PNG bytes and export files; the only differences (stats.json key order, a random Parquet fingerprint) also differ
-   between two runs of the old code.
+3. *How do you know XLeRobot output did not change?* A test pins the P2.3 camera poses, and the same inputs give
+   identical export files and manifests; the only differences (stats.json key order, a random Parquet fingerprint,
+   ±1 render noise on a pixel) also appear between two runs of the old code.
 
 ## TODO(daniel)
 
@@ -133,14 +135,14 @@ None. This slice has no CORE logic.
 ## Lines for integration to add (not edited here)
 
 - MVP_PROGRESS / TASKS.md: "B2 SO-101 export + cameras: done on `feat/b2-so101-export`; SO-101 recording renders
-  with reconstruction error ≤ 1.4e-8 m; XLeRobot byte-identical."
+  with reconstruction error ≤ 1.4e-8 m; XLeRobot camera poses pinned, export and manifests unchanged."
 - README camera section: "`render-cameras` / `export-lerobot --cameras` serve both bench robots (`xlerobot_left`,
-  `so101`); SO-101 camera poses are placed by eye, not the real wrist camera."
+  `so101`); the SO-101 scene camera is placed by eye and the wrist is Menagerie's unmeasured wrist_cam."
 
 ## Open questions
 
-- Use Menagerie's `wrist_cam` pose (fovy 61, on `camera_mount`) as the SO-101 wrist camera instead of the by-eye
-  pose? It models the official mount, but it is still not measured on Daniel's arm. The spec asked for by-eye.
+- Wrist camera: Menagerie's wrist_cam, plausibly the 32×32 UVC wrist mount; mount pose and fovy 61 are unsourced
+  and not measured on Daniel's arm; measure the real lens FOV before any sim-to-real claim.
 - The SO-101 bench NPZ path is tested on 3 held steps only. Real SO-101 Store episodes arrive with the TODO(daniel)
   expert.
 - While I worked, `origin/integration/sim-mvp` moved past 89e53d4 (slice D merged). This branch is not rebased.
