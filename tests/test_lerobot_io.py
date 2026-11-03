@@ -171,7 +171,9 @@ def synthetic_hardware(root, robot_type="so101_follower"):
     dataset = LeRobotDataset.create(repo_id="synthetic/so101", root=root, robot_type=robot_type, fps=30,
                                     features=features, use_videos=False)
     episodes = []
-    for start, length in ((np.float32([0, -20, 15, 5, 0, 10]), 3), (np.float32([12.5, 3, -25, -8, 30, 60]), 4)):
+    # Exact 0.0 is what LeRobot writes when a servo reads its mid position (motors_bus.py:877); elbow_flex has
+    # the fixture offset 7.25, where float64 cancellation leaves ~1e-15 instead of 0 on re-encoding.
+    for start, length in ((np.float32([0, -20, 0, 5, 0, 10]), 3),(np.float32([12.5, 3, -25, -8, 30, 60]), 4)):
         state = start + np.arange(length, dtype=np.float32)[:, None] * np.float32(0.087890625)  # One STS3215 step.
         action = state + np.float32(0.5)
         for row in range(length):
@@ -184,24 +186,28 @@ def synthetic_hardware(root, robot_type="so101_follower"):
     return episodes
 
 
-def test_c_hardware_import_reencodes_exactly_and_tbd_map_is_refused(lerobot, tmp_path):
+def test_c_hardware_import_reencodes_and_tbd_map_is_refused(lerobot, tmp_path):
     episodes = synthetic_hardware(tmp_path / "hw")
-    with pytest.raises(ValueError, match="TBD"):
-        io.import_lerobot(tmp_path / "hw", tmp_path / "refused")  # The real, unmeasured P6 map.
-    assert not (tmp_path / "refused").exists()
+    with pytest.raises(ValueError, match="TBD"):  # The real, unmeasured P6 map.
+        io.import_lerobot(tmp_path / "hw", tmp_path / "refused", motor_units="degrees")
     joint_map = fixture_map(tmp_path / "fixture_map.json")
-    record = io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=joint_map)
+    with pytest.raises(ValueError, match="--motor-units degrees"):  # use_degrees is never recorded: no default.
+        io.import_lerobot(tmp_path / "hw", tmp_path / "refused", joint_map=joint_map)
+    assert not (tmp_path / "refused").exists()
+    record = io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=joint_map, motor_units="degrees")
     assert record["units"] == "radians" and record["joint_map"]["sha256"] == io.sha256(joint_map)
+    assert record["motor_units"] == "degrees" and record["use_degrees_assumed"] is True
     with np.load(tmp_path / "import/frames.npz") as frames:
         frames = dict(frames)
     sign, offset = np.asarray(FIXTURE_SIGN, float), np.asarray(FIXTURE_OFFSET, float)
     scale = np.asarray([180 / np.pi] * 5 + [50.0])
     raw_state = np.concatenate([state for state, _ in episodes])
     raw_action = np.concatenate([action for _, action in episodes])
-    assert 0.0 in raw_state  # Includes exact zeros, where cancellation could break re-encoding.
+    assert raw_state[0, 2] == 0.0 and offset[2] == 7.25
     for key, raw in (("state", raw_state), ("action", raw_action)):
         assert frames[key].dtype == np.float64
-        np.testing.assert_array_equal((sign * scale * frames[key] + offset).astype(np.float32), raw)
+        # Within 1e-9 motor units, far below one servo step (0.088 deg); exact zeros may come back as ~1e-15.
+        np.testing.assert_allclose(sign * scale * frames[key] + offset, raw, rtol=0, atol=1e-9)
     # Two independent episodes; LeRobot's timestamps restart at 0.
     np.testing.assert_array_equal(frames["episode_index"], [0, 0, 0, 1, 1, 1, 1])
     np.testing.assert_array_equal(frames["frame_index"], [0, 1, 2, 0, 1, 2, 3])
@@ -227,15 +233,84 @@ def test_c_hardware_import_reencodes_exactly_and_tbd_map_is_refused(lerobot, tmp
         io.to_store(tmp_path / "raw-import", tmp_path / "raw-store")
 
 
+def test_c_joint_map_units_must_be_degrees_and_range_0_100(lerobot, tmp_path):
+    synthetic_hardware(tmp_path / "hw")
+    joint_map = json.loads(fixture_map(tmp_path / "map.json").read_text())
+    for units, message in (("range_m100_100", "degrees for the body"), ("radians", "MotorNormMode")):
+        joint_map["joints"][1]["units"] = units
+        (tmp_path / "map.json").write_text(json.dumps(joint_map))
+        with pytest.raises(ValueError, match=message):
+            io.import_lerobot(tmp_path / "hw", tmp_path / "out", joint_map=tmp_path / "map.json", motor_units="degrees")
+    assert not (tmp_path / "out").exists()
+
+
+def hardware_import(tmp_path):
+    synthetic_hardware(tmp_path / "hw")
+    io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=fixture_map(tmp_path / "map.json"),
+                      motor_units="degrees")
+    return tmp_path / "import"
+
+
 def test_to_store_refuses_out_of_limit_actions(lerobot, tmp_path):
     synthetic_hardware(tmp_path / "hw")
     joint_map = json.loads(fixture_map(tmp_path / "map.json").read_text())
     joint_map["joints"][5]["zero_offset"] = 200.0  # Gripper 0-100 now maps below its spec limit.
     (tmp_path / "map.json").write_text(json.dumps(joint_map))
-    io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=tmp_path / "map.json")
+    io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=tmp_path / "map.json", motor_units="degrees")
     with pytest.raises(ValueError, match="outside spec position limits"):
         io.to_store(tmp_path / "import", tmp_path / "store")
     assert not (tmp_path / "store").exists()
+
+
+def test_to_store_limit_slack_is_1e_6_rad(lerobot, tmp_path):
+    from xert.spec import load_spec
+    root = hardware_import(tmp_path)
+    upper = load_spec(ROOT / "xert/spec/so101.yaml").position_limits[0, 1]
+    with np.load(root / "frames.npz") as frames:
+        frames = dict(frames)
+    for excess, accepted in ((0.5e-6, True), (2e-6, False)):
+        frames["action"][0, 0] = upper + excess  # A non-final action, so to-store uses it.
+        np.savez(root / "frames.npz", **frames)
+        output = tmp_path / f"store-{excess}"
+        if accepted:
+            io.to_store(root, output)
+        else:
+            with pytest.raises(ValueError, match="outside spec position limits"):
+                io.to_store(root, output)
+
+
+def test_to_store_refuses_a_changed_spec(lerobot, tmp_path):
+    root = hardware_import(tmp_path)
+    record = json.loads((root / "import.json").read_text())
+    record["spec_sha256"] = "0" * 64
+    (root / "import.json").write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="current spec differs"):
+        io.to_store(root, tmp_path / "store")
+
+
+def rewrite(root, change):
+    """Rewrite a fixture dataset's single data Parquet file in place (tests only)."""
+    import pyarrow.parquet as pq
+    [path] = sorted(root.glob("data/**/*.parquet"))
+    table = pq.read_table(path)
+    pq.write_table(change(table), path)
+
+
+def test_import_sorts_rows_and_refuses_gaps(lerobot, tmp_path):
+    import pyarrow as pa
+    root = hardware_import(tmp_path)
+    shutil.copytree(tmp_path / "hw", tmp_path / "reversed")
+    rewrite(tmp_path / "reversed", lambda table: table.take(pa.array(range(table.num_rows - 1, -1, -1))))
+    io.import_lerobot(tmp_path / "reversed", tmp_path / "reversed-import", joint_map=tmp_path / "map.json",
+                      motor_units="degrees")
+    with np.load(root / "frames.npz") as ordered, np.load(tmp_path / "reversed-import/frames.npz") as shuffled:
+        assert set(ordered) == set(shuffled)
+        for key in ordered:
+            np.testing.assert_array_equal(ordered[key], shuffled[key])
+    shutil.copytree(tmp_path / "hw", tmp_path / "gap")
+    rewrite(tmp_path / "gap", lambda table: table.take(pa.array([0, 2, 3, 4, 5, 6])))  # Episode 0 loses frame 1.
+    with pytest.raises(ValueError, match="not contiguous"):
+        io.import_lerobot(tmp_path / "gap", tmp_path / "gap-import", raw_units=True)
 
 
 def tiny_collection(root, steps=3):
@@ -293,3 +368,29 @@ def test_camera_keys_agree_across_render_export_recorder_policy_and_hardware(ler
         after = getattr(Store(tmp_path / "import/dataset"), load)(record["episodes"][0]["id"])[0]
         for key in before:
             np.testing.assert_array_equal(before[key], after[key])
+
+
+def test_a_refuses_a_broken_successor_chain_and_unlabelled_action_streams(lerobot, tmp_path):
+    import pyarrow as pa
+    collection, _ = tiny_collection(tmp_path / "source")
+    io.export_lerobot(collection, tmp_path / "export", task=TASK)
+    shutil.copytree(tmp_path / "export", tmp_path / "chain")
+
+    def corrupt(table):  # next_observation[0] no longer equals the state of frame 1.
+        column = table.column("xert.next_observation")
+        rows = column.to_pylist()
+        rows[0][0] += 1.0
+        return table.set_column(table.column_names.index("xert.next_observation"), "xert.next_observation",
+                                pa.array(rows, type=column.type))
+    rewrite(tmp_path / "chain", corrupt)
+    with pytest.raises(ValueError, match="successor chain"):
+        io.import_lerobot(tmp_path / "chain", tmp_path / "chain-import")
+    shutil.copytree(tmp_path / "export", tmp_path / "unlabelled")
+    manifest = json.loads((tmp_path / "unlabelled/xert_export.json").read_text())
+    episode = manifest["source_episodes"][0]
+    del episode["training_action_source"], episode["corrective_sha256"]
+    episode["source"] = "test_fixture"  # Not noisy-scripted, so the Store would accept executed actions alone.
+    (tmp_path / "unlabelled/xert_export.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="without corrective labels"):
+        io.import_lerobot(tmp_path / "unlabelled", tmp_path / "unlabelled-import")
+    assert not (tmp_path / "chain-import").exists() and not (tmp_path / "unlabelled-import").exists()

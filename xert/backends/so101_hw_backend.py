@@ -15,7 +15,8 @@ from .base import JointState
 
 TBD = "TBD (not measured)"
 DOCUMENTED = ("joint", "motor", "id", "units")
-MEASURED = ("sign", "units_per_rad", "zero_offset", "min", "max", "max_speed", "max_accel")
+UNITS = ("degrees", "range_0_100", "range_m100_100")  # lerobot/motors/motors_bus.py:169-172 MotorNormMode.
+MEASURED = ("sign","units_per_rad", "zero_offset", "min", "max", "max_speed", "max_accel")
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ def load_joint_map(path, spec, *, dry_run, contents=None):
             raise ValueError(f"Joint map fields must be exactly {DOCUMENTED + MEASURED}: {entry['joint']}")
         if type(entry["id"]) is not int or not 1 <= entry["id"] <= 253 or not isinstance(entry["motor"], str) or not entry["motor"]:
             raise ValueError(f"{entry['joint']}: motor id must be an integer 1..253 and the motor name nonempty")
+        if entry["units"] not in UNITS:
+            raise ValueError(f"{entry['joint']}: units must be a LeRobot 0.6.1 MotorNormMode value {UNITS}")
         if any(entry[k] == TBD for k in MEASURED):
             if not dry_run:
                 raise ValueError(f"{entry['joint']}: TBD joint-map values are refused outside dry-run; measure them (P6.1)")

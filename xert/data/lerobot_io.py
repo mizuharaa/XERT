@@ -134,7 +134,7 @@ def _recording(raw, info):
                              "state_units": manifest["state_units"], "action_units": manifest["action_units"]}
 
 
-def _hardware(raw, info, joint_map, raw_units):
+def _hardware(raw, info, joint_map, raw_units, motor_units):
     """(c) LeRobot so101 follower data: `<motor>.pos`, degrees (use_degrees=True) and gripper RANGE_0_100."""
     from xert.backends.so101_hw_backend import load_joint_map
     from xert.spec import load_spec
@@ -151,24 +151,24 @@ def _hardware(raw, info, joint_map, raw_units):
     if raw_units:
         return columns, {"state": state, "action": action}, {**meta, "units": "raw_lerobot",
             "raw_units": "LeRobot motor units as recorded (degrees if use_degrees=True; gripper 0-100); not radians"}
+    if motor_units != "degrees":
+        raise ValueError("Radians need an explicit --motor-units degrees: LeRobot 0.6.1 does not record use_degrees")
     map_bytes = Path(joint_map).read_bytes()
     entries = load_joint_map(joint_map, spec, dry_run=False, contents=map_bytes)  # Any TBD joint is refused here.
+    if [e["units"] for e in entries] != ["degrees"] * 5 + ["range_0_100"]:
+        raise ValueError("Joint map units must be degrees for the body joints and range_0_100 for the gripper")
     sign = np.array([e["sign"] for e in entries], dtype=np.float64)
     scale = np.array([e["units_per_rad"] for e in entries], dtype=np.float64)
     offset = np.array([e["zero_offset"] for e in entries], dtype=np.float64)
-    converted = {}
-    for key, motor in (("state", state), ("action", action)):
-        # Inverse of the P6 map `motor = sign * units_per_rad * rad + zero_offset`; float64 so it re-encodes.
-        radians = (motor.astype(np.float64) - offset) / (sign * scale)
-        if not np.array_equal((sign * scale * radians + offset).astype(motor.dtype), motor):
-            raise ValueError(f"{key}: radians do not re-encode to the recorded motor values exactly")
-        converted[key] = radians
-    return columns, converted, {**meta, "units": "radians",
+    # Inverse of the P6 map `motor = sign * units_per_rad * rad + zero_offset`, in float64.
+    converted = {key: (motor.astype(np.float64) - offset) / (sign * scale)
+                 for key, motor in (("state", state), ("action", action))}
+    return columns, converted, {**meta, "units": "radians", "motor_units": motor_units, "use_degrees_assumed": True,
                                 "joint_map": {"path": str(Path(joint_map)), "sha256": hashlib.sha256(map_bytes).hexdigest()},
                                 "conversion": "rad = (motor - zero_offset) / (sign * units_per_rad), float64"}
 
 
-def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False):
+def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, motor_units=None):
     """Fresh output: raw/ (bit-exact copy) + import.json, plus (a) a Store or (b)/(c) frames.npz."""
     dataset, output = Path(dataset).absolute(), _fresh(output)
     kind = source_kind(dataset)
@@ -190,7 +190,7 @@ def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False):
             record.update(_restore_export(raw, staging))
         else:
             columns, arrays, meta = (_recording(raw, info) if kind == "xert_recording"
-                                     else _hardware(raw, info, joint_map, raw_units))
+                                     else _hardware(raw, info, joint_map, raw_units, motor_units))
             np.savez(staging / "frames.npz", episode_index=columns["episode_index"],
                      frame_index=columns["frame_index"], timestamp=columns["timestamp"], **arrays)
             features = set(info["features"]) - {"observation.state", "action", "observation.environment_state",
@@ -230,8 +230,7 @@ def to_store(source, output):
         store, ids = Store(staging / "dataset"), []
         for episode in np.unique(frames["episode_index"]):
             rows = frames["episode_index"] == episode
-            order = np.argsort(frames["frame_index"][rows], kind="stable")
-            state, action = frames["state"][rows][order], frames["action"][rows][order]
+            state, action = frames["state"][rows], frames["action"][rows]  # Import already sorted and checked rows.
             if len(state) < 2:
                 raise ValueError(f"Episode {episode} has one frame; a transition needs a successor")
             targets = action[:-1].astype(np.float64)  # The last action has no recorded successor.
@@ -302,6 +301,9 @@ def add_commands(commands):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--joint-map", type=Path, default=JOINT_MAP, help="P6 joint map for so101_follower data")
     parser.add_argument("--raw-units", action="store_true", help="Hardware data: keep native units (raw_lerobot)")
+    parser.add_argument("--motor-units", choices=["degrees"],
+                        help="Required for hardware radians, no default: LeRobot 0.6.1 does not record use_degrees, so "
+                             "you assert the arm was recorded with use_degrees=True (body degrees, gripper 0-100)")
     parser = commands.add_parser("to-store", help="DERIVED Store episodes from a radian frame-pair import")
     parser.add_argument("--frames", type=Path, required=True, help="An import-lerobot output of path (b) or (c)")
     parser.add_argument("--output", type=Path, required=True)
@@ -312,7 +314,8 @@ def execute(args):
         result = export_lerobot(args.episodes, args.output, task=args.task, cameras=args.cameras,
                                 robot_type=args.robot_type)
     elif args.command == "import-lerobot":
-        result = import_lerobot(args.dataset, args.output, joint_map=args.joint_map, raw_units=args.raw_units)
+        result = import_lerobot(args.dataset, args.output, joint_map=args.joint_map, raw_units=args.raw_units,
+                                motor_units=args.motor_units)
     else:
         result = to_store(args.frames, args.output)
     print(json.dumps(result))
