@@ -146,11 +146,11 @@ How the ledger works:
   from the simulator. There are no camera observations. P1.3 and P1.4 differ in
   architecture, ensemble weighting and dependencies, so they are not a causal
   ablation.
-- **xlerobot_left stands in for SO-101 on the bench.** The pick-and-place scene
-  exists only for the older XLeRobot left arm, whose asset declares SO-ARM100
-  geometry. Teleop and the learning results run on that arm and are labelled
-  `xlerobot_left`, not SO-101. The Robot Studio SO-101 model is used by the
-  middleware, without a block or tray.
+- **The learning results are on xlerobot_left, not SO-101.** The P1–P5 results
+  run on the older XLeRobot left arm, whose asset declares SO-ARM100 geometry, and
+  are labelled `xlerobot_left`. An SO-101 bench now exists (see "SO-101 track"
+  below), but it has no measured results yet: its scripted expert is a
+  `TODO(daniel)`.
 - **Retargeting is a control mapping, not metric tracking.** The webcam mapping
   uses image position and apparent palm size as a depth proxy, relative to a
   neutral pose. Wrist rotation also changes palm size. Tracking confidence is
@@ -186,6 +186,49 @@ These need a person at the webcam; scripted data cannot substitute.
    from the ledger.
 
 Phase 7 also still needs its demo video.
+
+## SO-101 track (real arm)
+
+These tools prepare XERT for a real SO-ARM101 (STS3215 servos). None has produced
+a measurement yet. The task list and each slice's handoff are in
+[docs/handoff/TASKS.md](docs/handoff/TASKS.md).
+
+- **SO-101 bench (slice B).**
+  - `xle_workbench.cli collect|evaluate|replay --robot {xlerobot_left,so101}`
+    (the default is `xlerobot_left`). Teleop uses `--spec xert/spec/so101.yaml
+    --profile configs/teleop/so101_bench.json`.
+  - SO-101 scripted collection and evaluation refuse until the `TODO(daniel)`
+    expert in `xle_workbench/so101_expert.py` exists.
+  - Physics substeps are `1/(control_hz·timestep)` and must be an exact integer
+    (20 on both benches).
+- **Cameras (P2.3, slice B2).** `render-cameras` and `export-lerobot --cameras`
+  serve both bench robots.
+  - The SO-101 scene camera is placed by eye.
+  - The wrist camera is Menagerie's `wrist_cam`; its mount and field of view are
+    not measured on the real arm.
+  - Key names follow [docs/CAMERA_KEYS.md](docs/CAMERA_KEYS.md).
+- **LeRobot import and export (slice C).**
+  - `python -m xert export-lerobot --episodes <collection.json|recording> --output
+    <fresh> --task "<text>" [--cameras]`
+  - `python -m xert import-lerobot --dataset <LeRobot v3> --output <fresh>
+    (--motor-units degrees | --raw-units) [--calibration <robot.id>.json]`
+    chooses its path from the dataset's manifest: XERT export, XERT recording, or
+    `so_follower` hardware.
+  - `python -m xert to-store --frames <import> --output <fresh>` makes derived
+    Store episodes.
+- **Real-vs-sim replay (slice D).** `python -m xert replay-real --dataset <import>
+  --output <fresh> [--ledger]` replays recorded goal positions open-loop on the
+  MuJoCo SO-101 and writes RMSE per joint per episode, plus plots.
+  - It is not system identification: the actuator fit is a `TODO(daniel)`.
+  - Results are tied to the replay timestep.
+  - Ledger rows need the calibration hash and robot id, and they are labelled
+    "simulation replay against hardware recording".
+- **Hardware backend (P6 prep).** `python -m xert hw-dry-run` prints motor
+  targets and never opens the bus. See [docs/learn/P6.md](docs/learn/P6.md) for
+  the bring-up order and the P6.2 blockers.
+- **ROS 2 Jazzy (slice E).** `ros/xert_ros` is a colcon package with a URDF, RViz
+  and a launch file. Its control loop is a `TODO(daniel)`; CI builds and tests it
+  in `ros:jazzy`. See [ros/xert_ros/README.md](ros/xert_ros/README.md).
 
 ## C++17 MuJoCo core
 
