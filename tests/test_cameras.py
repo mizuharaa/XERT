@@ -42,6 +42,15 @@ def test_cameras_are_added_in_memory_and_vendored_assets_stay_pinned():
     assert len(fingerprint) == 64
 
 
+def test_xlerobot_camera_poses_stay_the_p2_3_poses():
+    # Pinned: XLeRobot renders, and any model trained on them, depend on these exact poses and fields of view.
+    from xert.data.cameras import CAMERAS
+    assert CAMERAS["xlerobot_left"] == {
+        "scene": {"body": "world", "pos": [.5, -.15, .35], "target": [.24, .04, .1], "up": [0, 0, 1], "fovy": 45},
+        "wrist": {"body": "Fixed_Jaw", "pos": [.05, -.03, 0], "target": [-.01, -.1, 0], "up": [1, 0, 0], "fovy": 75},
+    }
+
+
 def test_scene_state_is_found_by_name_in_both_dataset_layouts():
     from xert.data.cameras import BLOCK, _columns
     from xle_workbench.sim import JOINTS
