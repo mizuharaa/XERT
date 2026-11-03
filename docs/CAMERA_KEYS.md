@@ -33,4 +33,7 @@ Nothing renames a key between recording, training and rollout.
 
 - **No key conflict.** Where keys exist, they follow the rule. No existing key was renamed.
 - **Gap:** the official ACT reference (`lerobot_act.py:24-27`) and the recorder use no cameras. Image training exists only as the one-step smoke test in `tests/test_cameras.py`.
-- **Open (owner decision):** a policy trained on sim `scene`/`wrist` can read real data only if the hardware camera config uses the same keys. A config such as `front` would need a rename at training time, and the rule above forbids that. The hardware camera config keys are not chosen yet (SO-101 cameras are slice B2).
+- **Decided (owner, 2026-11-03):** the real SO-101 cameras use the same config keys as sim, `scene` (fixed view of the block and tray) and `wrist` (gripper-mounted).
+  - With LeRobot that means the `--robot.cameras` dict keys are `scene` and `wrist`, so recordings carry `observation.images.scene` and `observation.images.wrist`.
+  - A policy trained on sim renders then reads real data with no rename.
+  - Any other key (e.g. `front`) breaks this rule; re-record or re-import instead of renaming at training time.
