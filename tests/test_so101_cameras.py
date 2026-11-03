@@ -113,6 +113,18 @@ def test_so101_block_pose_check_refuses_a_scene_that_disagrees(gl, session, tmp_
     assert not (tmp_path / "out").exists()
 
 
+def test_a_session_mixing_bench_robots_is_refused_before_rendering(session, tmp_path):
+    import shutil
+    mixed = tmp_path / "mixed"
+    for name in ("episode_000000", "episode_000001"):
+        shutil.copytree(session / "episode_000000", mixed / name)
+    manifest = json.loads((mixed / "episode_000001/xert_recording.json").read_text())
+    (mixed / "episode_000001/xert_recording.json").write_text(json.dumps({**manifest, "embodiment": "xlerobot_left"}))
+    with pytest.raises(ValueError, match="one bench robot"):
+        render_cameras(mixed, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
 def test_frame_pair_import_carries_the_renderer_columns_and_model(session, tmp_path):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from xert.data.lerobot_io import import_lerobot

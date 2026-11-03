@@ -104,7 +104,7 @@ class CameraRenderer:
     def __init__(self, size=SIZE, robot="xlerobot_left"):
         import mujoco
         from xle_workbench.sim import ROBOTS
-        self.mujoco, self.size, self.robot = mujoco, size, robot
+        self.mujoco, self.size = mujoco, size
         self.cameras, self.joints = CAMERAS[robot], ROBOTS[robot]["joints"]
         self.model, self.model_sha256 = camera_model(robot)
         self.data = mujoco.MjData(self.model)
