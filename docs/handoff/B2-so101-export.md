@@ -143,4 +143,9 @@ None. This slice has no CORE logic.
   pose? It models the official mount, but it is still not measured on Daniel's arm. The spec asked for by-eye.
 - The SO-101 bench NPZ path is tested on 3 held steps only. Real SO-101 Store episodes arrive with the TODO(daniel)
   expert.
-- While I worked, `origin/integration/sim-mvp` moved 3 commits past 89e53d4. This branch is not rebased.
+- While I worked, `origin/integration/sim-mvp` moved past 89e53d4 (slice D merged). This branch is not rebased.
+  `git merge-tree` shows two textual conflicts, both of which keep both sides:
+  - `.github/workflows/optional.yml`: the pytest file lists.
+  - `docs/CAMERA_KEYS.md`.
+
+  `xert/data/lerobot_io.py` and `tests/test_lerobot_io.py` auto-merge. Re-run the combined-env gate after the merge.
