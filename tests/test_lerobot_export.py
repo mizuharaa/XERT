@@ -93,3 +93,45 @@ def test_so101_six_joint_schema_fixture(tmp_path):
     assert dataset.features['observation.state']['names'] == expected
     assert dataset.features['action']['names'] == expected
     assert result == {'frames': 3, 'episodes': 1, 'max_abs_error': 0.0}
+
+
+def so101_bench_episode(root, steps=3):
+    """A few steps holding the reset pose on the SO-101 bench, saved the way pipeline.collect saves episodes.
+
+    Scripted test data, not an expert demonstration (the SO-101 expert is TODO(daniel)).
+    """
+    from xle_workbench.pipeline import rollout
+    from xle_workbench.sim import ManipulationEnv
+    env = ManipulationEnv({'robot': 'so101', 'horizon': steps})
+    hold = env.normalize(env.robot['reset_pose']).astype(np.float32)
+
+    class Hold:
+        def reset(self):
+            pass
+
+        def act(self, observation):
+            return hold
+
+    arrays, _ = rollout(env, 0, Hold())
+    store = Store(root)
+    record = store.save_episode(arrays, {'source': 'test_fixture_hold_reset_pose', 'seed': 0, 'config': env.config,
+                                         'simulation': env.metadata(), 'contract_sha256': contract(env.metadata()),
+                                         'hardware': False})
+    return store, record['id'], env.metadata()
+
+
+def test_so101_bench_episode_keeps_velocities_and_object_state(tmp_path):
+    store, identifier, simulation = so101_bench_episode(tmp_path / 'source')
+    with pytest.raises(ValueError, match='profile'):
+        export.export_episodes(store, [identifier], tmp_path / 'wrong', task='hold', robot_type='xlerobot_left')
+    result = export.export_episodes(store, [identifier], tmp_path / 'so101', task='hold', robot_type='so101')
+    assert result == {'frames': 3, 'episodes': 1, 'max_abs_error': 0.0}
+    dataset = LeRobotDataset('xert/local-export', root=tmp_path / 'so101', video_backend='pyav')
+    names = dataset.features['observation.state']['names']
+    # The same bench layout as xlerobot_left: what render-cameras needs to rebuild the scene.
+    assert names == simulation['observation_names'] and len(names) == 26
+    assert {'joint_velocity.gripper', 'block.qw', 'grasp.z', 'tray.x', 'time_fraction'} <= set(names)
+    assert dataset.features['action']['names'] == simulation['action_names'] and dataset.meta.robot_type == 'so101'
+    manifest = json.loads((tmp_path / 'so101/xert_export.json').read_text())
+    assert manifest['source_episodes'][0]['simulation']['model_sha256'] == simulation['model_sha256']
+    del dataset
