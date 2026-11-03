@@ -104,9 +104,10 @@ TEST_F(XertNodeTest, DISABLED_ControlLoopPublishesOneStatePerPeriod)
 }
 
 // TODO(daniel): enable once on_command and control_step are implemented.
-// Done means: after one valid command and then silence longer than
+// Done means: once now() - header.stamp of the last accepted command exceeds
 // stale_s = 0.2 s, the target sent to the arm stops following the command and
-// holds the current pose; a command with an unknown joint name or a NaN is
+// holds the current pose; a command with an unknown joint name, a NaN, a
+// header.stamp later than now() or earlier than the last accepted stamp is
 // dropped and does not refresh the stale clock.
 TEST_F(XertNodeTest, DISABLED_StaleCommandHoldsPose)
 {

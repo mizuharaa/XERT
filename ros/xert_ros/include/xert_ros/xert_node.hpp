@@ -41,22 +41,29 @@ public:
   //   - a command never reaches the arm without the safety layer: position,
   //     speed and acceleration limits from xert/spec/so101.yaml, as in
   //     xert/safety/limits.py SafetyController.step.
-  //   - stale command (older than stale_s = 0.2 s, xert/safety defaults)
-  //     -> hold the current pose; still stale after hold_s = 0.5 s -> smooth
-  //     return to rest over return_s = 2.0 s (xert/safety/watchdog.py).
+  //   - a command is stale when now() - its capture time (header.stamp)
+  //     > stale_s = 0.2 s -> hold the current pose; once now() - the last
+  //     fresh capture > stale_s + hold_s (0.2 + 0.5 s) -> smooth return to
+  //     rest over return_s = 2.0 s. Defaults: SafetyController in
+  //     xert/safety/limits.py:33; aging rule: xert/safety/watchdog.py:19-44.
   //   - never blocks longer than one period.
   void control_step();
 
   // TODO(daniel): subscription callback for xert/joint_commands.
-  // Input:   a position-only JointState (radians, any joint order, names set).
-  // Output:  stores the target plus its receive time for the next
-  //          control_step; nothing else.
+  // Input:   a position-only JointState (radians, any joint order, names set)
+  //          whose header.stamp is the capture time of the human motion, on
+  //          the same clock as this node's now().
+  // Output:  stores the target plus header.stamp as its capture time for the
+  //          next control_step; nothing else. The receive time is not used:
+  //          staleness is now() - capture, as in xert/safety/watchdog.py:19-29.
   // Invariants:
   //   - never forwards the command to the arm or publishes; control_step and
   //     the safety layer own that.
   //   - rejects (logs and drops) a message with an unknown or missing joint
-  //     name, name/position size mismatch, or a non-finite position; a
-  //     rejected message must not refresh the stale-command clock.
+  //     name, name/position size mismatch, a non-finite position, a stamp
+  //     later than now(), or a stamp earlier than the last accepted one
+  //     (watchdog.py raises on both); a rejected message must not refresh
+  //     the stale-command clock.
   //   - reorders positions into joint_names order before storing.
   void on_command(sensor_msgs::msg::JointState::ConstSharedPtr msg);
 
