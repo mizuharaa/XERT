@@ -1,8 +1,8 @@
 # Camera keys: one rule for recording, training and rollout
 
 **Rule.** Every camera image is the LeRobot feature `observation.images.<name>`.
-- On hardware, `<name>` is the key of the camera in the LeRobot robot config's `cameras` dict
-  (for example `front`, `wrist`).
+- On hardware, `<name>` is the key of the camera in the LeRobot robot config's `cameras` dict.
+  By owner decision these are `scene` and `wrist`, the same as sim (see "Decided" below).
 - In simulation, `render-cameras` uses `scene` and `wrist` on both bench robots (`xlerobot_left`, `so101`).
 
 Nothing renames a key between recording, training and rollout.
