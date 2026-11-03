@@ -39,6 +39,8 @@ def test_dispatch_is_by_manifest_and_unknown_sources_are_refused(tmp_path):
         io.source_kind(info_only(tmp_path / "old", codebase_version="v2.1", robot_type="so101_follower"))
     with pytest.raises(ValueError, match="Unknown source"):
         io.import_lerobot(tmp_path / "koch", tmp_path / "out")
+    with pytest.raises(ValueError, match="--calibration applies only"):
+        io.import_lerobot(export, tmp_path / "out", calibration=tmp_path / "unused.json")
     assert not (tmp_path / "out").exists()
 
 
@@ -235,6 +237,33 @@ def test_c_hardware_import_reencodes_and_tbd_map_is_refused(lerobot, tmp_path):
     assert raw["units"] == "raw_lerobot"
     with pytest.raises(ValueError, match="raw_lerobot"):
         io.to_store(tmp_path / "raw-import", tmp_path / "raw-store")
+
+
+def fixture_calibration(path):
+    """A FIXTURE LeRobot calibration file (made-up values) named <robot.id>.json."""
+    motors = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
+    path.write_text(json.dumps({m: {"id": i + 1, "drive_mode": 0, "homing_offset": 0, "range_min": 0,
+                                    "range_max": 4095} for i, m in enumerate(motors)}, indent=4))
+    return path
+
+
+def test_c_calibration_sha_and_robot_id_are_recorded_and_checked(lerobot, tmp_path):
+    synthetic_hardware(tmp_path / "hw")
+    joint_map = fixture_map(tmp_path / "map.json")
+    calibration = fixture_calibration(tmp_path / "follower_arm.json")
+    record = io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=joint_map, motor_units="degrees",
+                               calibration=calibration)
+    assert record["calibration"]["sha256"] == io.sha256(calibration)
+    assert record["calibration"]["robot_id"] == "follower_arm"
+    broken = json.loads(calibration.read_text())
+    del broken["gripper"]
+    (tmp_path / "broken.json").write_text(json.dumps(broken))
+    with pytest.raises(ValueError, match="calibration file"):
+        io.import_lerobot(tmp_path / "hw", tmp_path / "refused", joint_map=joint_map, motor_units="degrees",
+                          calibration=tmp_path / "broken.json")
+    assert not (tmp_path / "refused").exists()
+    plain = io.import_lerobot(tmp_path / "hw", tmp_path / "plain", joint_map=joint_map, motor_units="degrees")
+    assert "calibration" not in plain
 
 
 def test_c_joint_map_units_must_be_degrees_and_range_0_100(lerobot, tmp_path):

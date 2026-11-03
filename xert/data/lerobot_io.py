@@ -168,12 +168,34 @@ def _hardware(raw, info, joint_map, raw_units, motor_units):
                                 "conversion": "rad = (motor - zero_offset) / (sign * units_per_rad), float64"}
 
 
-def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, motor_units=None):
+def _calibration(path):
+    """sha256 and robot id of the follower's LeRobot calibration file (path c provenance for replay-real --ledger).
+
+    LeRobot 0.6.1 saves it as <calibration_dir>/<robot.id>.json (robots/robot.py:49-56) and records the id nowhere
+    in the dataset, so the id comes from the file name.
+    """
+    path = Path(path)
+    raw = path.read_bytes()
+    calibration = json.loads(raw)
+    motors = json.loads((ROOT / "xert/spec/so101.yaml").read_bytes())["joint_names"]
+    fields = {"id", "drive_mode", "homing_offset", "range_min", "range_max"}  # motors_bus.py MotorCalibration
+    if not isinstance(calibration, dict) or list(calibration) != motors or any(
+            not isinstance(v, dict) or set(v) != fields or any(type(x) is not int for x in v.values())
+            for v in calibration.values()):
+        raise ValueError(f"Not a LeRobot so101 follower calibration file (motors {motors}, fields {sorted(fields)})")
+    return {"path": str(path.absolute()), "sha256": hashlib.sha256(raw).hexdigest(), "robot_id": path.stem,
+            "robot_id_source": "calibration file name: LeRobot 0.6.1 writes <calibration_dir>/<robot.id>.json"}
+
+
+def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, motor_units=None, calibration=None):
     """Fresh output: raw/ (bit-exact copy) + import.json, plus (a) a Store or (b)/(c) frames.npz."""
     dataset, output = Path(dataset).absolute(), _fresh(output)
     kind = source_kind(dataset)
     if raw_units and kind != "so101_follower":
         raise ValueError("--raw-units applies only to hardware (so101_follower) datasets")
+    if calibration is not None and kind != "so101_follower":
+        raise ValueError("--calibration applies only to hardware (so101_follower) datasets")
+    calibration = _calibration(calibration) if calibration is not None else None
     source_sha256 = _hashes(dataset)
     with tempfile.TemporaryDirectory(prefix=".xert-import-", dir=output.parent) as temporary:
         staging = Path(temporary) / "import"
@@ -186,6 +208,8 @@ def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, mot
         record = {"version": 1, "source_kind": kind, "derived": False, "source": str(dataset),
                   "source_sha256": source_sha256, "fps": info["fps"], "lerobot_robot_type": info["robot_type"],
                   "raw": "raw/: bit-exact copy of the source dataset (hashes in source_sha256)"}
+        if calibration:
+            record["calibration"] = calibration
         if kind == "xert_export":
             record.update(_restore_export(raw, staging))
         else:
@@ -311,6 +335,9 @@ def add_commands(commands):
     parser.add_argument("--motor-units", choices=["degrees"],
                         help="Required for hardware radians, no default: LeRobot 0.6.1 does not record use_degrees, so "
                              "you assert the arm was recorded with use_degrees=True (body degrees, gripper 0-100)")
+    parser.add_argument("--calibration", type=Path,
+                        help="Hardware data: the follower's LeRobot calibration <robot.id>.json; records its sha256 "
+                             "and the robot id (required later by replay-real --ledger)")
     parser = commands.add_parser("to-store", help="DERIVED Store episodes from a radian frame-pair import")
     parser.add_argument("--frames", type=Path, required=True, help="An import-lerobot output of path (b) or (c)")
     parser.add_argument("--output", type=Path, required=True)
@@ -322,7 +349,7 @@ def execute(args):
                                 robot_type=args.robot_type)
     elif args.command == "import-lerobot":
         result = import_lerobot(args.dataset, args.output, joint_map=args.joint_map, raw_units=args.raw_units,
-                                motor_units=args.motor_units)
+                                motor_units=args.motor_units, calibration=args.calibration)
     else:
         result = to_store(args.frames, args.output)
     print(json.dumps(result))
