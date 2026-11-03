@@ -9,20 +9,41 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | R1 | Ubuntu 24.04 CMake + CI (CTest, pytest, equivalence) | done in P0.3 | Already done: `linux.yml` on every push | [P0.3 note](../learn/P0.3.md) |
 | E | ROS 2 Jazzy `xert_ros` scaffold, URDF, RViz, launch, QoS README | `feat/e-xert-ros` | Merged; CI builds and tests on Jazzy | [E-xert-ros.md](E-xert-ros.md) |
 | C | `xert export-lerobot` / `import-lerobot` / `to-store`, round trips, camera keys | `feat/c-lerobot-io` | Merged | [C-lerobot-io.md](C-lerobot-io.md), [CAMERA_KEYS](../CAMERA_KEYS.md) |
-| B | SO-101 as a second bench robot, `--robot` CLI, timing contract | `feat/b-so101-bench` | Built, in QA | `B-so101-bench.md` |
-| D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | not started | Next (C merged) | `D-replay-real.md` |
-| B2 | SO-101 export schema + cameras | not started | Wave 3, after B and C | `B2-so101-export.md` |
+| B | SO-101 as a second bench robot, `--robot` CLI, timing contract | `feat/b-so101-bench` | Merged | [B-so101-bench.md](B-so101-bench.md) |
+| D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | `feat/d-replay-real` | Built, in QA | `D-replay-real.md` |
+| B2 | SO-101 export schema + cameras | not started | Next (B and C merged) | `B2-so101-export.md` |
 
 ## Daniel's TODO(daniel) queue
 These fill in as slices land. Each entry gives file:line and the test that defines "done".
 - **E, ROS control loop:**
   - `ros/xert_ros/include/xert_ros/xert_node.hpp`: `control_step()`, `on_command()`, `read_state()`. Their contracts are in the header comments; the line numbers are in [E-xert-ros.md](E-xert-ros.md).
   - Done = the two `DISABLED_` gtests in `ros/xert_ros/test/test_xert_node.cpp` are enabled and pass in `ros.yml`.
-- **Owner decisions from C:**
-  - Name the real arm's cameras `scene`/`wrist`, the same as sim, so one policy reads both without renaming?
-  - Should `to-store` append the block/tray `environment_state` to observations?
-  - Importing real recordings assumes LeRobot's `use_degrees=True`; pass `--motor-units degrees` to assert it.
-- **Owner decision:** pick a project licence. The repo has no LICENSE, and `ros/xert_ros/package.xml` says "TODO".
+- **B, SO-101 scripted expert** (`xle_workbench/so101_expert.py`):
+  - `so101_expert_targets()` at :11 (waypoints) and `so101_expert_action()` at :30 (IK targets, gains, rate limits).
+  - Done = the three strict xfails in `tests/test_so101_expert.py` (:43 pre-grasp within 5 mm, :54 success on seeds 0..8, :62 held-out success) pass with their markers removed.
+  - The 5 mm pre-grasp test is weak: a naive hover passes it. The success tests are the real bar.
+- **Notes from B:**
+  - The base placement (`SO101_BASE`) was chosen for position reach only; a top-down grasp approach was not measured. Move it if your expert needs to.
+  - Migration: core edits change `implementation_sha256`, so P1.2–P2.1 stored episodes and models refuse replay/load on the new core and reproduce at their recorded `git_commit` (see the B handoff).
+
+## Owner decisions (2026-11-03: Daniel accepted every recommended default)
+| # | Decision | Applied as | Where |
+| --- | --- | --- | --- |
+| 1 | Project licence | Apache-2.0 (same as the vendored SO-101 and Menagerie assets) | `LICENSE`, `ros/xert_ros/package.xml` |
+| 2 | Real camera names | `scene` and `wrist`, identical to sim | `docs/CAMERA_KEYS.md` |
+| 3 | Block/tray state in `to-store` | Appended to observations when the import has `environment_state` | slice D fix round |
+| 4 | SO-101 contact solver settings | Keep Menagerie's (10/20/10), tuned with that model | B scene provenance |
+| 5 | Trust for `replay-real --ledger` | Record the LeRobot calibration file sha256 and robot id at import; ledger rows require it | slice D fix round |
+| 6 | Replay start velocity | Assume rest, but flag episodes whose first frames are already moving | slice D fix round |
+| - | Joint-limit tolerance in replay | 1e-6 rad, the same as import | slice D fix round |
+
+Already defaulted earlier and unchanged:
+- P5.3 pooled non-overlap rule and C redrawn per seed
+- teleop Esc saves the episode, then quits
+- lossless PNG images
+- `--spec` selects the teleop arm
+- earlier agent-written CORE code is kept as tutoring material
+- `--motor-units degrees` asserts LeRobot's `use_degrees=True`
 
 ## Waiting on Daniel (hands-on)
 P3.5 live webcam runs, P3.6 clip, P4.1 live check, P4.2 demos, P5.2 thresholds, P5.3 run, demo video, SO-101 bring-up (P6.1/P6.2 per `docs/learn/P6.md`).

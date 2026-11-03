@@ -28,6 +28,9 @@ def main():
     collect.add_argument('--action-noise-std', type=float, default=0.0,
                          help='Gaussian arm-target noise; save corrective expert labels separately')
     collect.add_argument("--config", default="{}", help="JSON environment config")
+    robots = ["xlerobot_left", "so101"]
+    robot_help = "Bench arm (default xlerobot_left); SO-101 has no tuned scripted expert yet"
+    collect.add_argument("--robot", choices=robots, help=robot_help)
     train = commands.add_parser("train", help="Train on explicit episode IDs or a collection result JSON")
     train.add_argument("--episodes", nargs="+")
     train.add_argument("--collection", type=Path)
@@ -37,9 +40,11 @@ def main():
     evaluate.add_argument("--episodes", type=int, default=10)
     evaluate.add_argument("--seed", type=int, default=10000)
     evaluate.add_argument("--config", default="{}")
+    evaluate.add_argument("--robot", choices=robots, help=robot_help)
     replay = commands.add_parser("replay", help="Re-run recorded actions and compare all observations")
     replay.add_argument("episode")
     replay.add_argument("--image", type=Path)
+    replay.add_argument("--robot", choices=robots, help="Refuse unless the episode was recorded on this arm")
     smoke = commands.add_parser("smoke", help="Run collect -> train -> held-out evaluation -> replay")
     smoke.add_argument("--epochs", type=int, default=2)
     smoke.add_argument("--horizon", type=int, default=600)
@@ -78,8 +83,14 @@ def main():
     import torch
     torch.set_num_threads(1)
     store = Store(args.data)
+    if args.command in ("collect", "evaluate"):
+        config = settings(args.config)
+        if args.robot:
+            if config.get("robot", args.robot) != args.robot:
+                parser.error("--robot conflicts with the robot in --config")
+            config["robot"] = args.robot
     if args.command == "collect":
-        result = pipeline.collect(store, list(range(args.seed, args.seed + args.episodes)), settings(args.config),
+        result = pipeline.collect(store, list(range(args.seed, args.seed + args.episodes)), config,
                                   action_noise_std=args.action_noise_std)
     elif args.command == "train":
         if bool(args.episodes) == bool(args.collection):
@@ -87,10 +98,9 @@ def main():
         identifiers = args.episodes or json.loads(args.collection.read_text("utf-8-sig"))["episode_ids"]
         result = pipeline.train_model(store, identifiers, settings(args.config))
     elif args.command == "evaluate":
-        result = pipeline.evaluate(store, list(range(args.seed, args.seed + args.episodes)),
-                                   settings(args.config), args.model)
+        result = pipeline.evaluate(store, list(range(args.seed, args.seed + args.episodes)), config, args.model)
     elif args.command == "replay":
-        result = pipeline.replay(store, args.episode)
+        result = pipeline.replay(store, args.episode, robot=args.robot)
         if args.image:
             args.image.parent.mkdir(parents=True, exist_ok=True)
             args.image.write_bytes(pipeline.replay(store, args.episode, image=True))
