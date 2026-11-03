@@ -16,6 +16,12 @@ from xert.eval import ledger
 from .storage import Store, atomic_json, sha256
 
 
+EVALUATION_NOTES = {
+    "xlerobot_left": "Simulation only; pinned XLeRobot left arm (asset declares so_arm100), not verified SO-101. ",
+    "so101": "Simulation only; Menagerie SO-101 model on the composed bench, not the real arm. ",
+}
+
+
 def contract(metadata: dict) -> str:
     fields = {key: metadata.get(key) for key in
               ("observation_dim", "action_dim", "observation_names", "action_names",
@@ -238,13 +244,12 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
                              for name in ("pipeline.json", "metadata.json", "model.pt"))
         row = ledger.new_row(
             **provenance, slice=slice_id, experiment=experiment or f"evaluation_{identifier}",
-            backend="mujoco", embodiment="xlerobot_left", metric="success_rate",
+            backend="mujoco", embodiment=env.config["robot"], metric="success_rate",
             value=report["success_rate"], ci95=report["success_rate_ci95"], n=report["trials"],
             seeds={"train": train_seeds, "eval": list(seeds)},
             config_path=ledger.artifact_path(path / "config.json"),
             artifact_paths=[ledger.artifact_path(item) for item in artifacts],
-            notes=("Simulation only; pinned XLeRobot left arm (asset declares so_arm100), not verified SO-101. "
-                   + report["interval_note"]),
+            notes=(EVALUATION_NOTES[env.config["robot"]] + report["interval_note"]),
             evaluation_id=identifier, model_id=model_id,
             demonstration_seeds=proof["training_source_seeds"] if proof else [])
         report["ledger_id"] = row["id"]
@@ -258,11 +263,13 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
         env.close()
 
 
-def replay(store: Store, identifier: str, image: bool = False) -> dict | bytes:
+def replay(store: Store, identifier: str, image: bool = False, robot: str | None = None) -> dict | bytes:
     from .sim import ManipulationEnv
     arrays, record = store.load_episode(identifier)
     if record.get("seed") is None or "config" not in record:
         raise ValueError("Replay requires a simulation seed and environment configuration")
+    if robot is not None and record["config"].get("robot", "xlerobot_left") != robot:
+        raise ValueError(f"Episode was recorded on {record['config'].get('robot', 'xlerobot_left')}, not {robot}")
     env = ManipulationEnv(record["config"])
     try:
         if contract(env.metadata()) != record.get("contract_sha256"):

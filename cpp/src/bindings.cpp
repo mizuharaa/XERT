@@ -30,8 +30,11 @@ PYBIND11_MODULE(_reach_core, module) {
                               reinterpret_cast<mjData*>(data.attr("_address").cast<std::uintptr_t>()),
                               joints, targets, limits, iterations, damping);
     });
+    const auto xle = reach::xlerobot_left();  // Defaults keep the original four-argument call.
     py::class_<reach::Env>(module, "Env")
-        .def(py::init([](py::object model, py::object data, py::object ik_data, int horizon) {
+        .def(py::init([](py::object model, py::object data, py::object ik_data, int horizon,
+                         std::array<std::string, 6> joints, std::string grasp_site, reach::Action reset_pose,
+                         double control_hz, bool scripted_expert) {
             // Hold the Python owners, never free or duplicate their MuJoCo allocations.
             auto mujoco = py::module_::import("mujoco");
             if (!py::isinstance(model, mujoco.attr("MjModel")) ||
@@ -40,8 +43,13 @@ PYBIND11_MODULE(_reach_core, module) {
                 throw py::value_error("Expected MjModel and its MjData owners");
             return reach::Env(reinterpret_cast<mjModel*>(model.attr("_address").cast<std::uintptr_t>()),
                               reinterpret_cast<mjData*>(data.attr("_address").cast<std::uintptr_t>()),
-                              reinterpret_cast<mjData*>(ik_data.attr("_address").cast<std::uintptr_t>()), horizon);
-        }), py::keep_alive<1, 2>(), py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
+                              reinterpret_cast<mjData*>(ik_data.attr("_address").cast<std::uintptr_t>()), horizon,
+                              reach::Robot{joints, grasp_site, reset_pose, control_hz, scripted_expert});
+        }), py::arg("model"), py::arg("data"), py::arg("ik_data"), py::arg("horizon"),
+            py::arg("joints") = xle.joints, py::arg("grasp_site") = xle.grasp_site,
+            py::arg("reset_pose") = xle.reset_pose, py::arg("control_hz") = xle.control_hz,
+            py::arg("scripted_expert") = xle.scripted_expert,
+            py::keep_alive<1, 2>(), py::keep_alive<1, 3>(), py::keep_alive<1, 4>())
         .def("reset_state", [](reach::Env& env, const std::array<double, 2>& xy, int delay) {
             return array(env.reset_state(xy, delay));
         })
@@ -62,6 +70,7 @@ PYBIND11_MODULE(_reach_core, module) {
             info["object_in_robot_contact"] = result.held;
             return py::make_tuple(array(result.observation), result.reward, result.finished, info);
         })
+        .def_readonly("substeps", &reach::Env::substeps)
         .def_readonly("steps", &reach::Env::steps)
         .def_readonly("stable_steps", &reach::Env::stable_steps)
         .def_readonly("lifted", &reach::Env::lifted)

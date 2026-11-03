@@ -3,10 +3,18 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace reach {
-Env::Env(mjModel* model, mjData* data, mjData* ik_data, int horizon)
-    : model(model), data(data), ik_data(ik_data), horizon(horizon) {
+// Must match xle_workbench/sim.py ROBOTS["xlerobot_left"]: this default serves the four-argument callers
+// (reach_trials, reach_tests, the old pybind call); Python passes its copy explicitly.
+Robot xlerobot_left() {
+    return {{"Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L"}, "grasp",
+            {0, 1.0, 1.2, -.6, 0, 1.0}, 25, true};
+}
+
+Env::Env(mjModel* model, mjData* data, mjData* ik_data, int horizon, Robot robot)
+    : model(model), data(data), ik_data(ik_data), robot(std::move(robot)), horizon(horizon) {
     // The core reads mjModel/mjData fields directly, so the loaded DLL must match the build headers.
     if (mj_version() != mjVERSION_HEADER)
         throw std::runtime_error("mujoco.dll version differs from the headers this core was built with; rebuild");
@@ -17,9 +25,12 @@ Env::Env(mjModel* model, mjData* data, mjData* ik_data, int horizon)
         if (result < 0) throw std::invalid_argument(std::string("Missing bench element: ") + name);
         return result;
     };
-    const char* names[] = {"Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L"};
+    const double exact = 1.0 / (this->robot.control_hz * model->opt.timestep);
+    substeps = static_cast<int>(std::lround(exact));
+    if (!std::isfinite(exact) || substeps < 1 || std::abs(exact - substeps) > 1e-9 * substeps)
+        throw std::invalid_argument("1/(control_hz*timestep) must be an exact positive integer of substeps");
     for (int i = 0; i < 6; ++i) {
-        int joint = id(mjOBJ_JOINT, names[i]);
+        int joint = id(mjOBJ_JOINT, this->robot.joints[i].c_str());
         if (model->jnt_type[joint] != mjJNT_HINGE ||
             model->actuator_trnid[2*i] != joint || model->actuator_trntype[i] != mjTRN_JOINT)
             throw std::invalid_argument("Bench joint/actuator layout mismatch");
@@ -28,7 +39,7 @@ Env::Env(mjModel* model, mjData* data, mjData* ik_data, int horizon)
         limits[i] = {model->actuator_ctrlrange[2*i], model->actuator_ctrlrange[2*i+1]};
         if (!(limits[i][0] < limits[i][1])) throw std::invalid_argument("Invalid actuator limits");
     }
-    site = id(mjOBJ_SITE, "grasp");
+    site = id(mjOBJ_SITE, this->robot.grasp_site.c_str());
     block = id(mjOBJ_BODY, "block");
     tray = id(mjOBJ_BODY, "tray");
     int joint = id(mjOBJ_JOINT, "block_joint");
@@ -45,7 +56,7 @@ Observation Env::reset_state(const std::array<double, 2>& xy, int delay_steps) {
     data->qpos[block_q] = xy[0];
     data->qpos[block_q+1] = xy[1];
     data->qpos[block_q+2] = .096;
-    const Action initial = {0, 1.0, 1.2, -.6, 0, 1.0};
+    const Action& initial = robot.reset_pose;
     for (int i = 0; i < 6; ++i) data->ctrl[i] = data->qpos[qids[i]] = initial[i];
     mj_forward(model, data);
     steps = stable_steps = 0;
@@ -84,7 +95,7 @@ StepResult Env::step(const Action& action) {
     pending.push_back(target);
     std::copy(pending.front().begin(), pending.front().end(), data->ctrl);
     pending.pop_front();
-    for (int i = 0; i < 20; ++i) mj_step(model, data);
+    for (int i = 0; i < substeps; ++i) mj_step(model, data);
     for (int i = 0; i < model->nq; ++i)
         if (!std::isfinite(data->qpos[i])) throw std::runtime_error("Nonfinite simulation state");
     for (int i = 0; i < model->nv; ++i)
@@ -114,5 +125,8 @@ StepResult Env::step(const Action& action) {
             {pos[0], pos[1], pos[2]}, failure};
 }
 
-Action Env::expert_action() { return reach::expert_action(*this); }
+Action Env::expert_action() {
+    if (!robot.scripted_expert) throw std::runtime_error("The native scripted expert is tuned for xlerobot_left only");
+    return reach::expert_action(*this);
+}
 }
