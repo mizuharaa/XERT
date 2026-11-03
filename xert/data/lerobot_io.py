@@ -294,7 +294,7 @@ def add_commands(commands):
                         help="An NPZ collection.json, a runtime recording, or a session of episode_* recordings")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--task", required=True)
-    parser.add_argument("--cameras", action="store_true", help="Add render-cameras images (XLeRobot bench only)")
+    parser.add_argument("--cameras", action="store_true", help="Add render-cameras images (XLeRobot or SO-101 bench)")
     parser.add_argument("--robot-type", choices=PROFILES, default="xlerobot_left", help="NPZ export profile")
     parser = commands.add_parser("import-lerobot", help="LeRobot v3 dataset into XERT formats (manifest-dispatched)")
     parser.add_argument("--dataset", type=Path, required=True)

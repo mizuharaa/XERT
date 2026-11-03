@@ -337,8 +337,9 @@ def test_camera_keys_agree_across_render_export_recorder_policy_and_hardware(ler
     from xert.eval.lerobot_act import policy_config
     from xert.spec import load_spec
     from xle_workbench.storage import Store
-    rendered = {f"observation.images.{name}" for name in CAMERAS}
+    rendered = {f"observation.images.{name}" for name in CAMERAS["xlerobot_left"]}
     assert rendered == {"observation.images.scene", "observation.images.wrist"}
+    assert all({f"observation.images.{name}" for name in cameras} == rendered for cameras in CAMERAS.values())
     recorder = _features(load_spec(ROOT / "xert/spec/so101.yaml"), True, ["block.x"])
     assert not [key for key in recorder if "image" in key]  # The recorder never records images.
     settings = dict(chunk_size=2, dim_model=8, n_heads=1, dim_feedforward=8, n_encoder_layers=1, n_decoder_layers=1,

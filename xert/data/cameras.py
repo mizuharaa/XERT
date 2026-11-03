@@ -18,12 +18,23 @@ import numpy as np
 from xert.data.lerobot_export import _publish
 from xle_workbench.storage import atomic_json, sha256
 
-# Scene camera: world frame, metres; above the far end of the table, facing the arm, aimed between
-# the block start area and the tray.
-# Wrist camera: Fixed_Jaw body frame, where the jaw tips point along local -y (grasp site at y = -0.10).
+# Per bench robot (xle_workbench.sim ROBOTS). Every pose was chosen by eye in simulation: none is a real camera
+# mount or real intrinsics. Scene cameras are in the world frame, wrist cameras in a gripper body frame, metres.
 CAMERAS = {
-    "scene": {"body": "world", "pos": [.5, -.15, .35], "target": [.24, .04, .1], "up": [0, 0, 1], "fovy": 45},
-    "wrist": {"body": "Fixed_Jaw", "pos": [.05, -.03, 0], "target": [-.01, -.1, 0], "up": [1, 0, 0], "fovy": 75},
+    # P2.3. Scene: above the far end of the table, facing the arm, aimed between the block start area and the tray.
+    # Wrist: Fixed_Jaw frame, where the jaw tips point along local -y (grasp site at y = -0.10).
+    "xlerobot_left": {
+        "scene": {"body": "world", "pos": [.5, -.15, .35], "target": [.24, .04, .1], "up": [0, 0, 1], "fovy": 45},
+        "wrist": {"body": "Fixed_Jaw", "pos": [.05, -.03, 0], "target": [-.01, -.1, 0], "up": [1, 0, 0], "fovy": 75},
+    },
+    # B2. The arm base is at the far end of the table, (0.42, 0.04, 0.08) facing -x (sim.SO101_BASE), so the scene
+    # camera sits past the near end, off to -y, aimed between the block area, the tray and the arm.
+    # Wrist: gripper frame, where the jaw tips point along local -z (grasp site at z = -0.101); the camera sits
+    # beside the camera mount and looks down past both jaw tips. Menagerie's own wrist_cam is not rendered.
+    "so101": {
+        "scene": {"body": "world", "pos": [-.02, -.25, .4], "target": [.3, .04, .15], "up": [0, 0, 1], "fovy": 45},
+        "wrist": {"body": "gripper", "pos": [-.04, .06, -.04], "target": [-.008, 0, -.12], "up": [0, 0, 1], "fovy": 75},
+    },
 }
 SIZE = 128  # Square pixels: a 4x4 grid after ACT's stride-32 ResNet-18 (docs/learn/P2.3.md).
 BLOCK = [f"block.{axis}" for axis in ("x", "y", "z", "qw", "qx", "qy", "qz")]
@@ -42,29 +53,62 @@ def _xyaxes(pos, target, up):
     return np.concatenate([right, np.cross(right, forward)])
 
 
-def camera_model():
-    """(model, recorded-model fingerprint): the bench model with both cameras added in memory."""
+def _so101_spec():
+    """(uncompiled MjSpec, recorded-model fingerprint) of the SO-101 bench, rebuilt step by step like sim.so101_scene().
+
+    That function returns only a compiled model and an XML that does not parse back, and sim.py is not edited here
+    because its bytes are hashed into every recording's implementation_sha256. The rebuild is refused unless it
+    writes exactly so101_scene()'s XML; the fingerprint is ManipulationEnv's for the SO-101.
+    """
+    import xml.etree.ElementTree as ET
+    import mujoco
+    from xle_workbench.sim import SO101_ASSETS, SO101_BASE, SO101_TIMESTEP, model_xml, so101_scene
+    _, xml, source = so101_scene()  # Also checks the vendored Menagerie checksums.
+    props = ET.Element("mujoco")
+    world = ET.SubElement(props, "worldbody")
+    for element in ET.fromstring(model_xml()).find("worldbody"):
+        if element.get("name") not in ("mount", "Rotation_Pitch"):
+            world.append(element)
+    spec = mujoco.MjSpec.from_file(str(SO101_ASSETS / "so101_xert.xml"))
+    spec.option.timestep = SO101_TIMESTEP
+    spec.body("base").pos, spec.body("base").quat = SO101_BASE["pos"], SO101_BASE["quat"]
+    for actuator in spec.actuators:
+        joint = spec.joint(actuator.target)
+        actuator.ctrlrange = [max(actuator.ctrlrange[0], joint.range[0]), min(actuator.ctrlrange[1], joint.range[1])]
+    spec.attach(mujoco.MjSpec.from_string(ET.tostring(props, encoding="unicode")), frame=spec.worldbody.add_frame(),
+                prefix="")
+    if spec.to_xml() != xml:
+        raise RuntimeError("Camera scene differs from xle_workbench.sim.so101_scene(); update _so101_spec()")
+    return spec, hashlib.sha256(xml.encode() + json.dumps(source, sort_keys=True).encode()).hexdigest()
+
+
+def camera_model(robot="xlerobot_left"):
+    """(model, recorded-model fingerprint): the robot's bench model with both cameras added in memory."""
     import mujoco
     from xle_workbench.sim import ASSETS, model_fingerprint, model_xml, verified_source
-    source = verified_source(ASSETS)  # Vendored files are checksummed and only read.
-    xml = model_xml()
-    spec = mujoco.MjSpec.from_string(xml)
-    for name, camera in CAMERAS.items():
+    if robot == "so101":
+        spec, fingerprint = _so101_spec()
+    else:
+        source = verified_source(ASSETS)  # Vendored files are checksummed and only read.
+        xml = model_xml()
+        spec, fingerprint = mujoco.MjSpec.from_string(xml), model_fingerprint(xml, source)
+    for name, camera in CAMERAS[robot].items():
         added = spec.body(camera["body"]).add_camera(name=name, pos=camera["pos"], fovy=camera["fovy"])
         added.alt.type = mujoco.mjtOrientation.mjORIENTATION_XYAXES
         added.alt.xyaxes = _xyaxes(camera["pos"], camera["target"], camera["up"])
-    return spec.compile(), model_fingerprint(xml, source)
+    return spec.compile(), fingerprint
 
 
 class CameraRenderer:
     """Offscreen renderer; MuJoCo's default GL on Windows opens a hidden GLFW context, CI uses MUJOCO_GL=osmesa."""
-    def __init__(self, size=SIZE):
+    def __init__(self, size=SIZE, robot="xlerobot_left"):
         import mujoco
-        from xle_workbench.sim import JOINTS
-        self.mujoco, self.size = mujoco, size
-        self.model, self.model_sha256 = camera_model()
+        from xle_workbench.sim import ROBOTS
+        self.mujoco, self.size, self.robot = mujoco, size, robot
+        self.cameras, self.joints = CAMERAS[robot], ROBOTS[robot]["joints"]
+        self.model, self.model_sha256 = camera_model(robot)
         self.data = mujoco.MjData(self.model)
-        self.qids = [self.model.joint(name).qposadr[0] for name in JOINTS]
+        self.qids = [self.model.joint(name).qposadr[0] for name in self.joints]
         self.block = self.model.joint("block_joint").qposadr[0]
         self.option = mujoco.MjvOption()
         self.option.sitegroup[:] = 0  # Hide the red grasp marker: it is a debugging aid, not part of the scene.
@@ -76,7 +120,7 @@ class CameraRenderer:
         self.data.qpos[self.block:self.block + 7] = block
         self.mujoco.mj_forward(self.model, self.data)
         images = {}
-        for name in CAMERAS:
+        for name in self.cameras:
             self.renderer.update_scene(self.data, camera=name, scene_option=self.option)
             images[f"observation.images.{name}"] = self.renderer.render().copy()
         block = self.data.body("block")
@@ -94,17 +138,24 @@ def _recorded_models(root):
         return {bench["model_sha256"]} if bench else set()
     if (root / "xert_export.json").exists():
         manifest = json.loads((root / "xert_export.json").read_text("utf-8"))
-        return {episode["simulation"]["model_sha256"] for episode in manifest["source_episodes"]}
+        return {episode["simulation"].get("model_sha256") for episode in manifest["source_episodes"]}
     return set()
 
 
-def _columns(features):
+def _recorded_robot(root):
+    """The bench robot a P4.1 recording (embodiment) or a P2.1 export (robot_type) names, else None."""
+    for name, key in (("xert_recording.json", "embodiment"), ("xert_export.json", "robot_type")):
+        if (root / name).exists():
+            return json.loads((root / name).read_text("utf-8")).get(key)
+    return None
+
+
+def _columns(features, robot_joints):
     """(feature, index) of every state entry the scene needs, by name across both observation features."""
-    from xle_workbench.sim import JOINTS
     where = {name: (key, i) for key in ("observation.state", "observation.environment_state")
              for i, name in enumerate(features.get(key, {}).get("names") or [])}
     # P4.1 recordings name joints "<joint>.pos"; P2.1 exports keep the native "joint_position.<joint>".
-    joints = [f"{name}.pos" if f"{name}.pos" in where else f"joint_position.{name}" for name in JOINTS]
+    joints = [f"{name}.pos" if f"{name}.pos" in where else f"joint_position.{name}" for name in robot_joints]
     wanted = {"joints": joints, "block": BLOCK, **CHECKS}
     missing = [name for names in wanted.values() for name in names if name not in where]
     if missing:
@@ -136,9 +187,9 @@ def _render_one(source, staging, renderer, repo_id):
         raise ValueError("Dataset already has image or video features")
     tasks = dict(zip(meta.tasks["task_index"], meta.tasks.index))
     table = _read_table(source)
-    where = _columns(features)
+    where = _columns(features, renderer.joints)
     images = {f"observation.images.{name}": {"dtype": "image", "shape": (renderer.size, renderer.size, 3),
-                                             "names": ["height", "width", "channels"]} for name in CAMERAS}
+                                             "names": ["height", "width", "channels"]} for name in renderer.cameras}
     dataset = LeRobotDataset.create(repo_id=repo_id, root=staging, robot_type=meta.robot_type, fps=meta.fps,
                                     features={**features, **images}, use_videos=False)
     episodes = table.column("episode_index").to_numpy()
@@ -167,7 +218,7 @@ def _render_one(source, staging, renderer, repo_id):
     del dataset
     if max(errors.values()) > TOLERANCE:
         raise ValueError(f"Rebuilt scene disagrees with the recorded grasp, tray or block: {errors}")
-    verification = _verify(table, digests, staging)
+    verification = _verify(table, digests, staging, renderer.cameras)
     for path in source.iterdir():  # Provenance sidecars (xert_recording.json, journal, roundtrip, export manifest).
         if path.is_file():
             shutil.copyfile(path, staging / path.name)
@@ -179,7 +230,7 @@ def _render_one(source, staging, renderer, repo_id):
         "cameras": {name: {**camera, "feature": f"observation.images.{name}", "height": renderer.size,
                            "width": renderer.size,
                            "xyaxes": _xyaxes(camera["pos"], camera["target"], camera["up"]).tolist()}
-                    for name, camera in CAMERAS.items()},
+                    for name, camera in renderer.cameras.items()},
         "camera_placement": "chosen by eye in simulation; not the real SO-101 wrist camera mount or intrinsics",
         "hidden": "all sites (the grasp marker)",
         "image_storage": "LeRobot dtype image: lossless PNG in the data Parquet",
@@ -193,7 +244,7 @@ def _render_one(source, staging, renderer, repo_id):
     return verification
 
 
-def _verify(source_table, digests, root):
+def _verify(source_table, digests, root, cameras):
     """Stream the written Parquet: source columns byte-identical, every PNG decodes to the rendered pixels."""
     import pyarrow.parquet as pq
     from PIL import Image
@@ -206,7 +257,7 @@ def _verify(source_table, digests, root):
                 for name in source_table.column_names:
                     if not batch.column(name).equals(expected.column(name).combine_chunks()):
                         raise ValueError(f"Rendered dataset changed source column {name}")
-                for key in (f"observation.images.{name}" for name in CAMERAS):
+                for key in (f"observation.images.{name}" for name in cameras):
                     for row, image in enumerate(batch.column(key).field("bytes").to_pylist()):
                         pixels = np.asarray(Image.open(io.BytesIO(image)).convert("RGB"))
                         if hashlib.sha256(pixels.tobytes()).hexdigest() != digests[offset + row][key]:
@@ -226,8 +277,11 @@ def render_cameras(source, output, size=SIZE, repo_id="xert/runtime"):
     recordings = [source] if (source / "meta/info.json").exists() else sorted(source.glob("episode_*"))
     if not recordings:
         raise ValueError("Source is neither a LeRobot dataset nor a session of episode_* datasets")
+    robots = {_recorded_robot(path) for path in recordings}
+    if len(robots) != 1 or not robots <= set(CAMERAS):
+        raise ValueError(f"Cameras are defined for one bench robot of {sorted(CAMERAS)} per run; dataset names {robots}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    renderer = CameraRenderer(size)
+    renderer = CameraRenderer(size, robots.pop())
     try:
         with tempfile.TemporaryDirectory(prefix=".xert-cameras-", dir=output.parent) as temporary:
             staging = Path(temporary) / "dataset"

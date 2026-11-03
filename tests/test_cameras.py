@@ -49,11 +49,11 @@ def test_scene_state_is_found_by_name_in_both_dataset_layouts():
     export = {"observation.state": {"names": [f"joint_position.{name}" for name in JOINTS] + tail}}
     recording = {"observation.state": {"names": [f"{name}.pos" for name in JOINTS]},
                  "observation.environment_state": {"names": tail}}
-    assert _columns(export)["block"][0] == ("observation.state", 6)
-    assert _columns(recording)["joints"][5] == ("observation.state", 5)
-    assert _columns(recording)["tray"][2] == ("observation.environment_state", 12)
+    assert _columns(export, JOINTS)["block"][0] == ("observation.state", 6)
+    assert _columns(recording, JOINTS)["joints"][5] == ("observation.state", 5)
+    assert _columns(recording, JOINTS)["tray"][2] == ("observation.environment_state", 12)
     with pytest.raises(ValueError, match="lacks"):
-        _columns({"observation.state": recording["observation.state"]})
+        _columns({"observation.state": recording["observation.state"]}, JOINTS)
 
 
 def test_render_is_deterministic_for_a_fixed_state(renderer):
