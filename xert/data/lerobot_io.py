@@ -225,12 +225,18 @@ def to_store(source, output):
     limits = load_spec(spec_path, contents=spec_bytes).position_limits
     with np.load(source / "frames.npz", allow_pickle=False) as frames:
         frames = dict(frames)
+    # Owner decision: observations are the joint state, then environment_state (named columns, recorded order)
+    # when the import has it (path b); path (c) hardware imports stay joint-only.
+    environment = "environment_state" in frames
+    names = record["columns"]["state"] + (record["columns"]["environment_state"] if environment else [])
     with tempfile.TemporaryDirectory(prefix=".xert-to-store-", dir=output.parent) as temporary:
         staging = Path(temporary) / "store"
         store, ids = Store(staging / "dataset"), []
         for episode in np.unique(frames["episode_index"]):
             rows = frames["episode_index"] == episode
             state, action = frames["state"][rows], frames["action"][rows]  # Import already sorted and checked rows.
+            if environment:
+                state = np.concatenate([state, frames["environment_state"][rows]], axis=1)
             if len(state) < 2:
                 raise ValueError(f"Episode {episode} has one frame; a transition needs a successor")
             targets = action[:-1].astype(np.float64)  # The last action has no recorded successor.
@@ -244,7 +250,8 @@ def to_store(source, output):
                 {"source": "derived_frame_pairs", "derived": True, "source_kind": record["source_kind"],
                  "import": str(source), "import_sha256": sha256(source / "import.json"),
                  "frames_sha256": sha256(source / "frames.npz"), "episode_index": int(episode),
-                 "observation_names": record["columns"]["state"], "action_names": record["columns"]["action"],
+                 "observation_names": names, "action_names": record["columns"]["action"],
+                 "observation_contents": "joint state + environment_state" if environment else "joint state only",
                  "action_convention": "absolute joint position targets normalized to [-1,1] by spec position_limits",
                  "rewards": "0 placeholder, not measured",
                  "terminated": "false everywhere: each episode's last transition is truncated, not terminal"})

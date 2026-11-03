@@ -130,7 +130,10 @@ def test_b_runtime_recording_imports_float32_exact_frame_pairs(bench_recording, 
     stored = io.to_store(tmp_path / "import", tmp_path / "store")
     arrays, metadata = Store(tmp_path / "store/dataset").load_episode(stored["episode_ids"][0])
     limits = load_spec(ROOT / "xert/spec/xlerobot_left.yaml").position_limits
-    np.testing.assert_array_equal(arrays["observations"], frames["state"])
+    # Owner decision: path (b) observations are the joint state, then environment_state in recorded order.
+    np.testing.assert_array_equal(arrays["observations"], np.concatenate([frames["state"], frames["environment_state"]], 1))
+    assert metadata["observation_names"] == record["columns"]["state"] + names
+    assert metadata["observation_contents"] == "joint state + environment_state"
     np.testing.assert_allclose((arrays["actions"] + 1) / 2 * (limits[:, 1] - limits[:, 0]) + limits[:, 0],
                                frames["action"][:-1], atol=1e-6)
     assert not arrays["rewards"].any() and not arrays["terminated"].any() and metadata["derived"] is True
@@ -222,6 +225,7 @@ def test_c_hardware_import_reencodes_and_tbd_map_is_refused(lerobot, tmp_path):
         assert metadata["episode_index"] == episode
         # Successors come from the same episode only: no transition from episode 0's last frame to episode 1.
         np.testing.assert_array_equal(arrays["observations"], frames["state"][rows].astype(np.float32))
+        assert metadata["observation_contents"] == "joint state only"  # Path (c) has no environment_state.
         lengths.append(len(arrays["actions"]))
     assert lengths == [2, 3]
     # --raw-units needs no map, keeps native values, and to-store refuses it.
