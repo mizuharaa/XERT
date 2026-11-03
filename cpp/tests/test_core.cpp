@@ -21,6 +21,12 @@ int main(int argc, char** argv) {
         std::unique_ptr<mjData, decltype(&mj_deleteData)> data(mj_makeData(model.get()), mj_deleteData);
         std::unique_ptr<mjData, decltype(&mj_deleteData)> ik(mj_makeData(model.get()), mj_deleteData);
         reach::Env env(model.get(), data.get(), ik.get());
+        check(env.substeps == 20, "XLeRobot bench must keep 20 substeps of 0.002 s per 25 Hz step");
+        reach::Robot inexact = reach::xlerobot_left();
+        inexact.control_hz = 30;  // 1/(30*0.002) = 16.67 substeps
+        bool refused = false;
+        try { reach::Env(model.get(), data.get(), ik.get(), 600, inexact); } catch (const std::invalid_argument&) { refused = true; }
+        check(refused, "Non-integer substeps accepted");
         std::array<double, 2> xy{};
         char comma;
         std::ifstream positions(argv[2]);
