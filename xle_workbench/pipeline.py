@@ -238,7 +238,7 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
                              for name in ("pipeline.json", "metadata.json", "model.pt"))
         row = ledger.new_row(
             **provenance, slice=slice_id, experiment=experiment or f"evaluation_{identifier}",
-            backend="mujoco", embodiment="xlerobot_left", metric="success_rate",
+            backend="mujoco", embodiment=env.config["robot"], metric="success_rate",
             value=report["success_rate"], ci95=report["success_rate_ci95"], n=report["trials"],
             seeds={"train": train_seeds, "eval": list(seeds)},
             config_path=ledger.artifact_path(path / "config.json"),
@@ -258,11 +258,13 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
         env.close()
 
 
-def replay(store: Store, identifier: str, image: bool = False) -> dict | bytes:
+def replay(store: Store, identifier: str, image: bool = False, robot: str | None = None) -> dict | bytes:
     from .sim import ManipulationEnv
     arrays, record = store.load_episode(identifier)
     if record.get("seed") is None or "config" not in record:
         raise ValueError("Replay requires a simulation seed and environment configuration")
+    if robot is not None and record["config"].get("robot", "xlerobot_left") != robot:
+        raise ValueError(f"Episode was recorded on {record['config'].get('robot', 'xlerobot_left')}, not {robot}")
     env = ManipulationEnv(record["config"])
     try:
         if contract(env.metadata()) != record.get("contract_sha256"):
