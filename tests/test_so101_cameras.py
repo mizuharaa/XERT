@@ -33,6 +33,14 @@ def test_so101_cameras_sit_on_the_gripper_and_keep_the_recorded_fingerprint():
     assert camera_model()[1] != fingerprint  # Per-robot fingerprints: XLeRobot data never renders on the SO-101.
 
 
+def test_so101_camera_scene_is_refused_if_it_drifts_from_the_bench(monkeypatch):
+    from xle_workbench import sim
+    model, xml, source = sim.so101_scene()
+    monkeypatch.setattr(sim, "so101_scene", lambda: (model, xml.replace('impratio="10"', 'impratio="1"'), source))
+    with pytest.raises(RuntimeError, match="so101_scene"):
+        camera_model("so101")
+
+
 @pytest.fixture(scope="module")
 def gl():
     try:
