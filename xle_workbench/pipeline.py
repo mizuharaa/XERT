@@ -16,6 +16,12 @@ from xert.eval import ledger
 from .storage import Store, atomic_json, sha256
 
 
+EVALUATION_NOTES = {
+    "xlerobot_left": "Simulation only; pinned XLeRobot left arm (asset declares so_arm100), not verified SO-101. ",
+    "so101": "Simulation only; Menagerie SO-101 model on the composed bench, not the real arm. ",
+}
+
+
 def contract(metadata: dict) -> str:
     fields = {key: metadata.get(key) for key in
               ("observation_dim", "action_dim", "observation_names", "action_names",
@@ -243,8 +249,7 @@ def evaluate(store: Store, seeds: list[int], config: dict | None = None,
             seeds={"train": train_seeds, "eval": list(seeds)},
             config_path=ledger.artifact_path(path / "config.json"),
             artifact_paths=[ledger.artifact_path(item) for item in artifacts],
-            notes=("Simulation only; pinned XLeRobot left arm (asset declares so_arm100), not verified SO-101. "
-                   + report["interval_note"]),
+            notes=(EVALUATION_NOTES[env.config["robot"]] + report["interval_note"]),
             evaluation_id=identifier, model_id=model_id,
             demonstration_seeds=proof["training_source_seeds"] if proof else [])
         report["ledger_id"] = row["id"]

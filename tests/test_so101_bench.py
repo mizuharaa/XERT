@@ -168,6 +168,10 @@ def test_teleop_session_records_so101_bench_with_timing_check(tmp_path):
     del dataset
 
 
+def test_every_bench_robot_has_its_own_ledger_note():
+    assert set(pipeline.EVALUATION_NOTES) == set(ROBOTS) and "XLeRobot" not in pipeline.EVALUATION_NOTES["so101"]
+
+
 def test_collect_and_evaluate_refuse_until_the_expert_is_tuned(tmp_path):
     store = Store(tmp_path / "data")
     for run in (lambda: pipeline.collect(store, [0], {"robot": "so101"}),
