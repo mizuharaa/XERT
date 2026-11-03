@@ -32,7 +32,9 @@ LIMIT_SLACK_RAD = 1e-6
 NOTES = ("Open-loop replay of recorded goal positions (action) on the MuJoCo SO-101 position actuators, each "
          "episode reset to its recorded first state; RMSE against recorded observation.state. Not system "
          "identification: no parameter was fitted, and the servo's internal PID differs from the MuJoCo position "
-         "actuator. MuJoCo ran this; the hardware only recorded the reference.")
+         "actuator. MuJoCo ran this; the hardware only recorded the reference. Results, and any fit made from them, "
+         "are tied to the replay timestep recorded with them: dt is not physics-neutral (slice D QA measured "
+         "0.0016-0.0118 rad per-joint RMSE between replays that differed only in physics steps per frame).")
 
 
 def load_import(dataset):
@@ -71,6 +73,7 @@ def replay_timing(fps, asset_timestep):
     """(dt, k): k = ceil(1/(fps*asset dt)) physics steps per frame and dt = 1/(fps*k), never above the asset dt.
 
     30 fps on the 0.005 s asset: 1/(30*0.005) = 6.67 steps does not divide, so k = 7 and dt = 1/210 s.
+    The choice changes the physics (see NOTES), so dt and k are recorded with every result.
     """
     k = math.ceil(1 / (fps * asset_timestep) - 1e-9)
     return 1 / (fps * k), k
@@ -199,7 +202,7 @@ def replay_real(dataset, output, *, ledger=False):
                  f"- import: `{dataset}` (import.json sha256 `{import_sha256}`)",
                  f"- joint map sha256 `{record['joint_map']['sha256']}`",
                  f"- {fps} fps; dt {dt!r} s = 1/({fps}*{substeps}), {substeps} physics steps per frame "
-                 f"(asset dt {asset_dt!r} s); every recorded frame used, none resampled",
+                 f"(asset dt {asset_dt!r} s); every recorded frame used, none resampled; these numbers hold for this dt only",
                  f"- actions clipped to the spec limits within {LIMIT_SLACK_RAD} rad; max excess {max_excess!r} rad",
                  f"- n = frames compared per joint (frames 1..T-1 of each episode); plots: {plots}", "",
                  "| episode | joint | n | RMSE (rad) | RMSE (deg) |", "|---|---|---|---|---|"]
