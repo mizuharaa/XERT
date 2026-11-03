@@ -7,13 +7,14 @@ from .base import JointState
 class BenchBackend:
     """One bench episode. Absolute targets are normalized exactly as ManipulationEnv expects.
 
-    The core steps 20 physics substeps per call and decides success, failure and timeout;
+    The bench robot is the spec's name (xlerobot_left or so101). The core steps 1/(control_hz*timestep)
+    physics substeps per call (20 on both benches) and decides success, failure and timeout;
     `info` holds its latest result and `finished` means the core refuses further steps.
     """
     def __init__(self, spec, seed):
-        from xle_workbench.sim import JOINTS, ManipulationEnv
-        self.env = ManipulationEnv()
-        if (spec.joint_names != tuple(JOINTS) or spec.control_hz != self.env.metadata()["control_hz"] or
+        from xle_workbench.sim import ManipulationEnv
+        self.env = ManipulationEnv({"robot": spec.name})
+        if (spec.joint_names != tuple(self.env.joints) or spec.control_hz != self.env.metadata()["control_hz"] or
                 not np.array_equal(spec.position_limits, self.env.limits)):
             raise ValueError("Spec does not describe the bench arm joints, limits and control rate")
         self.spec, self.model, self.data = spec, self.env.model, self.env.data

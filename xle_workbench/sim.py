@@ -11,7 +11,23 @@ import mujoco
 import numpy as np
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets" / "xlerobot"
+SO101_ASSETS = ASSETS.parent / "menagerie" / "robotstudio_so101"
 JOINTS = ["Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L"]
+CONTROL_HZ = 25
+# Bench arms: actuator i drives joints[i]. Physics substeps per control step are derived in the
+# native core as 1/(CONTROL_HZ * timestep) and refused unless that is an exact integer.
+ROBOTS = {
+    "xlerobot_left": {"joints": JOINTS, "grasp_site": "grasp", "reset_pose": [0, 1.0, 1.2, -.6, 0, 1.0],
+                      "scripted_expert": True},
+    # LeRobot so101_follower motor names. Reset: arm raised, grasp ~7 cm above the block area, gripper at
+    # the spec's open value (docs/handoff/B-so101-bench.md). The expert is TODO(daniel): so101_expert.py.
+    "so101": {"joints": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"],
+              "grasp_site": "grasp", "reset_pose": [0, -1.5, 1.0, 1.4, 0, 1.4], "scripted_expert": False},
+}
+# SO-101 base on the table top, turned to face the block area and tray. Measured with the generalized
+# IK in scripts/so101_bench_reach.py (results in the scene provenance below and the handoff).
+SO101_BASE = {"pos": [.42, .04, .08], "quat": [0, 0, 0, 1]}  # yaw = pi about world z
+SO101_TIMESTEP = .002  # Menagerie ships 0.005 s; 0.002 s matches the XLeRobot bench integration step.
 
 
 def verified_source(asset_dir):
@@ -77,13 +93,50 @@ def model_xml():
     return ET.tostring(root, encoding="unicode")
 
 
+def so101_scene():
+    """(compiled model, composed XML, source provenance): the vendored SO-101 plus the XLeRobot bench's own
+    light, floor, table, tray and block, composed in memory with MjSpec. No vendored file is written."""
+    source = json.loads((SO101_ASSETS / "SOURCE.json").read_text())
+    for name, expected in source["sha256"].items():
+        if hashlib.sha256((SO101_ASSETS / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f"Pinned model asset changed: {name}")
+    robot_xml = SO101_ASSETS / "so101_xert.xml"  # Derived by scripts/prepare_so101.py; hashed below.
+    props = ET.Element("mujoco")
+    world = ET.SubElement(props, "worldbody")
+    for element in ET.fromstring(model_xml()).find("worldbody"):
+        if element.get("name") not in ("mount", "Rotation_Pitch"):  # Drop the XLeRobot arm and its mount.
+            world.append(element)
+    spec = mujoco.MjSpec.from_file(str(robot_xml))
+    menagerie_timestep = spec.option.timestep
+    spec.option.timestep = SO101_TIMESTEP
+    spec.body("base").pos, spec.body("base").quat = SO101_BASE["pos"], SO101_BASE["quat"]
+    clamped = {}
+    for actuator in spec.actuators:
+        # The bench normalizes actions by ctrlrange, so targets stay inside the joint range (the so101.yaml limits).
+        joint = spec.joint(actuator.target)
+        low, high = max(actuator.ctrlrange[0], joint.range[0]), min(actuator.ctrlrange[1], joint.range[1])
+        if [low, high] != list(actuator.ctrlrange):
+            clamped[actuator.name] = {"menagerie": actuator.ctrlrange.tolist(), "bench": [float(low), float(high)]}
+            actuator.ctrlrange = [low, high]
+    spec.attach(mujoco.MjSpec.from_string(ET.tostring(props, encoding="unicode")), frame=spec.worldbody.add_frame(),
+                prefix="")
+    model = spec.compile()
+    provenance = {**source, "robot_xml": robot_xml.name,
+                  "robot_xml_sha256": hashlib.sha256(robot_xml.read_bytes()).hexdigest(),
+                  "composition": {"props": "light, floor, table, tray and block from the XLeRobot bench model_xml()",
+                                  "base": SO101_BASE, "timestep": {"menagerie": menagerie_timestep, "bench": SO101_TIMESTEP},
+                                  "ctrlrange_clamped_to_joint_range": clamped,
+                                  "reach_evidence": "scripts/so101_bench_reach.py; docs/handoff/B-so101-bench.md"}}
+    return model, spec.to_xml(), provenance
+
+
 class ManipulationEnv:
     def __init__(self, config=None):
         config = dict(config or {})
-        allowed = {"friction", "delay_steps", "horizon", "object_position", "object_position_bounds"}
+        allowed = {"robot", "friction", "delay_steps", "horizon", "object_position", "object_position_bounds"}
         if set(config) - allowed:
             raise ValueError(f"Unknown config: {sorted(set(config) - allowed)}")
-        self.config = {"friction": 1.0, "delay_steps": 0, "horizon": 600,
+        self.config = {"robot": "xlerobot_left", "friction": 1.0, "delay_steps": 0, "horizon": 600,
                        "object_position_bounds": [[.225, -.045], [.255, -.015]], **config}
         for key, lo, hi in [("friction", .1, 2), ("delay_steps", 0, 20), ("horizon", 1, 2000)]:
             val = self.config[key]
@@ -101,40 +154,50 @@ class ManipulationEnv:
             if pos.shape != (2,) or not np.isfinite(pos).all() or np.any(np.abs(pos) > .4):
                 raise ValueError("object_position must be finite [x,y] inside +/-0.4 m")
             self.config["object_position"] = pos.tolist()
-        self.source = verified_source(ASSETS)
-        xml = model_xml()
-        mesh_files = {mesh.get("file") for mesh in ET.fromstring(xml).findall("asset/mesh")}
-        if not mesh_files.issubset(self.source["sha256"]):
-            raise ValueError("Asset manifest does not cover every model mesh")
-        self.model = mujoco.MjModel.from_xml_string(xml)
+        if self.config["robot"] not in ROBOTS:
+            raise ValueError(f"robot must be one of {sorted(ROBOTS)}")
+        self.robot = ROBOTS[self.config["robot"]]
+        self.joints = self.robot["joints"]
+        if self.config["robot"] == "xlerobot_left":
+            self.source = verified_source(ASSETS)
+            xml = model_xml()
+            mesh_files = {mesh.get("file") for mesh in ET.fromstring(xml).findall("asset/mesh")}
+            if not mesh_files.issubset(self.source["sha256"]):
+                raise ValueError("Asset manifest does not cover every model mesh")
+            self.model = mujoco.MjModel.from_xml_string(xml)
+            self.xml_sha256 = model_fingerprint(xml, self.source)
+        else:
+            self.model, xml, self.source = so101_scene()
+            self.xml_sha256 = hashlib.sha256(xml.encode() + json.dumps(self.source, sort_keys=True).encode()).hexdigest()
         self.model.geom_friction[:, 0] = self.config["friction"]
         self.data = mujoco.MjData(self.model)
         self.ik_data = mujoco.MjData(self.model)
-        self.qids = np.array([self.model.joint(n).qposadr[0] for n in JOINTS])
-        self.dids = np.array([self.model.joint(n).dofadr[0] for n in JOINTS])
+        self.qids = np.array([self.model.joint(n).qposadr[0] for n in self.joints])
+        self.dids = np.array([self.model.joint(n).dofadr[0] for n in self.joints])
         self.limits = self.model.actuator_ctrlrange.copy()
-        self.site = self.model.site("grasp").id
+        self.site = self.model.site(self.robot["grasp_site"]).id
         self.block = self.model.body("block").id
         self.block_q = self.model.joint("block_joint").qposadr[0]
         self.block_d = self.model.joint("block_joint").dofadr[0]
-        self.xml_sha256 = model_fingerprint(xml, self.source)
         root = Path(__file__).resolve().parents[1]
         sources = [Path(__file__).resolve(), *sorted((root / "cpp/include/reach").glob("*.hpp")),
-                   *(root / "cpp/src" / name for name in ("env.cpp", "ik.cpp", "bindings.cpp"))]
+                   *(root / "cpp/src" / name for name in ("env.cpp", "ik.cpp", "bindings.cpp")),
+                   Path(__file__).resolve().with_name("so101_expert.py")]
         digest = hashlib.sha256()
         for path in sorted(sources):
             digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes())
         self.implementation_sha256 = digest.hexdigest()
         from ._reach_core import Env
-        self._core = Env(self.model, self.data, self.ik_data, self.config["horizon"])
+        self._core = Env(self.model, self.data, self.ik_data, self.config["horizon"], self.joints,
+                         self.robot["grasp_site"], self.robot["reset_pose"], CONTROL_HZ, self.robot["scripted_expert"])
         self.reset()
 
     def metadata(self):
-        names = ([f"joint_position.{n}" for n in JOINTS] + [f"joint_velocity.{n}" for n in JOINTS]
+        names = ([f"joint_position.{n}" for n in self.joints] + [f"joint_velocity.{n}" for n in self.joints]
                  + ["block.x", "block.y", "block.z", "block.qw", "block.qx", "block.qy", "block.qz"]
                  + ["grasp.x", "grasp.y", "grasp.z", "tray.x", "tray.y", "tray.z", "time_fraction"])
         return {"observation_dim": len(names), "action_dim": 6, "observation_names": names,
-                "action_names": JOINTS, "control_hz": 25, "horizon": self.config["horizon"],
+                "action_names": self.joints, "control_hz": CONTROL_HZ, "horizon": self.config["horizon"],
                 "action_convention": "absolute joint position targets normalized to [-1,1] by actuator_ctrlrange",
                 "action_joint_ranges_radians": self.limits.tolist(), "observation_convention": "privileged simulator state; world XYZ metres, wxyz quaternion, joint radians, rad/s",
                 "model_sha256": self.xml_sha256, "source": deepcopy(self.source),
@@ -170,6 +233,9 @@ class ManipulationEnv:
         return result
 
     def expert_action(self):
+        if not self.robot["scripted_expert"]:
+            from .so101_expert import so101_expert_action
+            return so101_expert_action(self)
         return self._core.expert_action()
 
     def render(self):
