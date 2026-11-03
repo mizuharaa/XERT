@@ -236,3 +236,60 @@ def test_to_store_refuses_out_of_limit_actions(lerobot, tmp_path):
     with pytest.raises(ValueError, match="outside spec position limits"):
         io.to_store(tmp_path / "import", tmp_path / "store")
     assert not (tmp_path / "store").exists()
+
+
+def tiny_collection(root, steps=3):
+    """TEST FIXTURE: the first `steps` transitions of one real P1.2 episode (outcome fields describe the full one)."""
+    from xle_workbench.storage import Store
+    source = Store(SOURCE / "dataset")
+    identifier = json.loads((SOURCE / "collection.json").read_text())["episode_ids"][0]
+    executed, metadata = source.load_episode(identifier)
+    labels, _ = source.load_training_episode(identifier)
+    cut = {"observations": executed["observations"][:steps + 1], "actions": executed["actions"][:steps],
+           "rewards": executed["rewards"][:steps], "terminated": executed["terminated"][:steps]}
+    record = Store(root / "dataset").save_episode(
+        cut, {**{k: v for k, v in metadata.items() if k not in io.DERIVED_KEYS},
+              "fixture": f"first {steps} steps of {identifier}"}, corrective_actions=labels["actions"][:steps])
+    (root / "collection.json").write_text(json.dumps({"episode_ids": [record["id"]]}))
+    return root / "collection.json", record["id"]
+
+
+def test_camera_keys_agree_across_render_export_recorder_policy_and_hardware(lerobot, tmp_path):
+    """docs/CAMERA_KEYS.md: every image feature is observation.images.<name>; sim names are scene/wrist."""
+    from lerobot.utils.feature_utils import dataset_to_policy_features, hw_to_dataset_features
+    from xert.data.cameras import CAMERAS
+    from xert.data.recorder import _features
+    from xert.eval.lerobot_act import policy_config
+    from xert.spec import load_spec
+    from xle_workbench.storage import Store
+    rendered = {f"observation.images.{name}" for name in CAMERAS}
+    assert rendered == {"observation.images.scene", "observation.images.wrist"}
+    recorder = _features(load_spec(ROOT / "xert/spec/so101.yaml"), True, ["block.x"])
+    assert not [key for key in recorder if "image" in key]  # The recorder never records images.
+    settings = dict(chunk_size=2, dim_model=8, n_heads=1, dim_feedforward=8, n_encoder_layers=1, n_decoder_layers=1,
+                    n_vae_encoder_layers=1, latent_dim=2, dropout=0.0, kl_weight=1.0, temporal_ensemble_coeff=None)
+    # The P1.4 official ACT reference is state-only: it consumes no camera key (a gap, not a mismatch).
+    assert set(policy_config(settings).image_features) == set()
+    # Hardware: LeRobot names image features after the camera config key; rollout strips the same prefix.
+    hardware = hw_to_dataset_features({"front": (480, 640, 3), "wrist": (480, 640, 3)}, "observation")
+    assert {key for key, f in hardware.items() if f["dtype"] == "video"} == \
+        {"observation.images.front", "observation.images.wrist"}
+    from xert.data.cameras import CameraRenderer
+    try:
+        CameraRenderer().close()
+    except Exception as exc:  # No offscreen GL: skip locally, as tests/test_cameras.py does; CI has osmesa.
+        if os.environ.get("CI"):
+            raise
+        pytest.skip(f"No offscreen GL context: {exc!r}")
+    collection, identifier = tiny_collection(tmp_path / "source")
+    io.export_lerobot(collection, tmp_path / "export", task=TASK, cameras=True)
+    info = json.loads((tmp_path / "export/meta/info.json").read_text())
+    exported = {key for key, f in info["features"].items() if f["dtype"] in ("image", "video")}
+    visual = {key for key, f in dataset_to_policy_features(info["features"]).items() if f.type.name == "VISUAL"}
+    assert exported == visual == rendered  # What an image policy would select is exactly what was rendered.
+    record = io.import_lerobot(tmp_path / "export", tmp_path / "import")  # (a) still restores; images stay in raw/.
+    for load in ("load_episode", "load_training_episode"):
+        before = getattr(Store(tmp_path / "source/dataset"), load)(identifier)[0]
+        after = getattr(Store(tmp_path / "import/dataset"), load)(record["episodes"][0]["id"])[0]
+        for key in before:
+            np.testing.assert_array_equal(before[key], after[key])
