@@ -26,34 +26,41 @@ PROFILES = {
 def _schema(metadata, robot_type):
     simulation = metadata['simulation']
     source_path, joints = PROFILES[robot_type]
+    names = simulation['observation_names']
+    # The bench observation (xle_workbench.sim ManipulationEnv.metadata): positions, velocities, then the block,
+    # grasp, tray and time state render-cameras rebuilds scenes from. SO-101 also keeps the six-position fixture.
+    bench = isinstance(names, list) and len(names) == 26
+    pinned, source = json.loads((ROOT / source_path).read_text('utf-8')), simulation.get('source')
+    if robot_type == 'so101' and bench and isinstance(source, dict):
+        # The composed SO-101 bench records the vendored manifest plus its composition (so101_scene()).
+        source = {key: value for key, value in source.items() if key in pinned}
     if (metadata.get('hardware') is not False or simulation.get('simulation_only') is not True
-            or simulation.get('source') != json.loads((ROOT / source_path).read_text('utf-8'))
+            or source != pinned
             or metadata.get('contract_sha256') != contract(simulation)
             or simulation.get('action_names') != joints):
         raise ValueError('Source identity, simulation provenance, or joint contract does not match profile')
-    names = simulation['observation_names']
     expected_positions = [f'joint_position.{name}' for name in joints]
     if (not isinstance(names, list) or len(names) != metadata['observation_dim']
             or any(not isinstance(n, str) or not n for n in names) or len(set(names)) != len(names)
             or names[:6] != expected_positions or metadata['action_dim'] != 6
             or simulation.get('observation_dim') != metadata['observation_dim']
             or simulation.get('action_dim') != metadata['action_dim']
-            or len(names) != (26 if robot_type == 'xlerobot_left' else 6)):
+            or not (bench or (robot_type == 'so101' and len(names) == 6))):
         raise ValueError('Observation names/dimensions do not match the declared profile')
     fps = simulation['control_hz']
     if type(fps) not in (int, float) or not np.isfinite(fps) or fps <= 0 or int(fps) != fps:
         raise ValueError('LeRobot export requires a positive integer control rate')
     if not isinstance(simulation.get('observation_convention'), str):
         raise ValueError('Observation units/convention must be explicit')
-    if robot_type == 'so101' and simulation['observation_convention'] != 'joint position radians':
+    if not bench and simulation['observation_convention'] != 'joint position radians':
         raise ValueError('SO-101 simulation state must explicitly use joint position radians')
     ranges = np.asarray(simulation.get('action_joint_ranges_radians'), dtype=float)
     if ranges.shape != (6, 2) or not np.isfinite(ranges).all() or np.any(ranges[:, 0] >= ranges[:, 1]):
         raise ValueError('Normalized action decoding ranges must be finite and ordered')
     if simulation.get('action_convention') != 'absolute joint position targets normalized to [-1,1] by actuator_ctrlrange':
         raise ValueError('Unsupported action convention')
-    state_names = names if robot_type == 'xlerobot_left' else [f'{name}.pos' for name in joints]
-    action_names = joints if robot_type == 'xlerobot_left' else state_names
+    state_names = names if bench else [f'{name}.pos' for name in joints]
+    action_names = joints if bench else state_names
     def vector(names):
         return {'dtype': 'float32', 'shape': (len(names),), 'names': names}
     return int(fps), {
