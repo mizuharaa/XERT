@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SO101_ASSETS = ROOT / "assets/menagerie/robotstudio_so101"
 
 
-def test_so101_cameras_sit_on_the_gripper_and_keep_the_recorded_fingerprint():
+def test_so101_wrist_is_menageries_wrist_cam_and_the_fingerprint_is_the_recorded_one():
+    import xml.etree.ElementTree as ET
     from xle_workbench.sim import ManipulationEnv
     def hashes():
         return {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in SO101_ASSETS.rglob("*") if path.is_file()}
@@ -25,9 +26,20 @@ def test_so101_cameras_sit_on_the_gripper_and_keep_the_recorded_fingerprint():
     model, fingerprint = camera_model("so101")
     bench = ManipulationEnv({"robot": "so101"})
     assert fingerprint == bench.xml_sha256 == bench.metadata()["model_sha256"]  # What every recording stores.
-    assert model.body(model.camera("wrist").bodyid[0]).name == "gripper" and model.camera("scene").bodyid[0] == 0
-    # Menagerie's own wrist_cam stays in the model unrendered; the added cameras change no body, geom or qpos.
-    assert {model.camera(i).name for i in range(model.ncam)} == {"scene", "wrist", "wrist_cam"}
+    assert CAMERAS["so101"]["wrist"] == {"model_camera": "wrist_cam"} and model.camera("scene").bodyid[0] == 0
+    # The wrist render is the vendored camera, exactly as so101_xert.xml defines it: read from the file, not copied.
+    mount = ET.parse(SO101_ASSETS / "so101_xert.xml").getroot().find(".//body[@name='gripper']/body[@name='camera_mount']")
+    vendored = mount.find("camera[@name='wrist_cam']")
+    assert mount.get("pos") is None and mount.get("quat") is None  # Identity pose in the gripper body.
+    wrist = model.camera("wrist_cam")
+    assert model.body(wrist.bodyid[0]).name == "camera_mount" == mount.get("name")
+    assert model.body(model.body("camera_mount").parentid[0]).name == "gripper"
+    quat = np.array(vendored.get("quat").split(), dtype=float)
+    np.testing.assert_allclose(wrist.pos, np.array(vendored.get("pos").split(), dtype=float), atol=1e-12)
+    np.testing.assert_allclose(wrist.quat, quat / np.linalg.norm(quat), atol=1e-12)
+    assert wrist.fovy[0] == float(vendored.get("fovy")) == 61
+    # Only the by-eye scene camera is added; it changes no body, geom or qpos.
+    assert {model.camera(i).name for i in range(model.ncam)} == {"scene", "wrist_cam"}
     assert (model.nq, model.nbody, model.ngeom) == (bench.model.nq, bench.model.nbody, bench.model.ngeom)
     assert before == hashes()
     assert camera_model()[1] != fingerprint  # Per-robot fingerprints: XLeRobot data never renders on the SO-101.
@@ -81,7 +93,8 @@ def test_original_so101_recording_renders_exports_and_round_trips(gl, session, t
     for output in (tmp_path / "rendered", tmp_path / "exported"):
         manifest = json.loads((output / "xert_cameras.json").read_text())
         assert manifest["model_sha256"] == recorded["source"]["bench"]["model_sha256"]
-        assert {name: camera["body"] for name, camera in manifest["cameras"].items()} == {"scene": "world", "wrist": "gripper"}
+        assert {name: camera["body"] for name, camera in manifest["cameras"].items()} == {"scene": "world", "wrist": "camera_mount"}
+        assert manifest["cameras"]["wrist"]["fovy"] == 61 and "measure the real lens FOV" in manifest["camera_placement"]
         # P2.3 reconstruction check: grasp site, tray and block position/orientation from the rebuilt scene.
         errors = manifest["reconstruction_max_error"]
         assert set(errors) == {"grasp", "tray", "block_position", "block_orientation"}
@@ -152,4 +165,4 @@ def test_so101_npz_export_with_cameras_rebuilds_the_bench_scene(gl, session, tmp
     assert verification["frames"] == 3
     manifest = json.loads((tmp_path / "export/xert_cameras.json").read_text())
     assert max(manifest["reconstruction_max_error"].values()) <= TOLERANCE
-    assert manifest["cameras"]["wrist"]["body"] == CAMERAS["so101"]["wrist"]["body"] == "gripper"
+    assert manifest["cameras"]["wrist"]["body"] == "camera_mount"

@@ -18,8 +18,8 @@ import numpy as np
 from xert.data.lerobot_export import _publish
 from xle_workbench.storage import atomic_json, sha256
 
-# Per bench robot (xle_workbench.sim ROBOTS). Every pose was chosen by eye in simulation: none is a real camera
-# mount or real intrinsics. Scene cameras are in the world frame, wrist cameras in a gripper body frame, metres.
+# Per bench robot (xle_workbench.sim ROBOTS). Scene cameras are in the world frame, wrist cameras in a gripper body
+# frame, metres. A "model_camera" entry renders a camera the vendored model already defines.
 CAMERAS = {
     # P2.3. Scene: above the far end of the table, facing the arm, aimed between the block start area and the tray.
     # Wrist: Fixed_Jaw frame, where the jaw tips point along local -y (grasp site at y = -0.10).
@@ -27,14 +27,20 @@ CAMERAS = {
         "scene": {"body": "world", "pos": [.5, -.15, .35], "target": [.24, .04, .1], "up": [0, 0, 1], "fovy": 45},
         "wrist": {"body": "Fixed_Jaw", "pos": [.05, -.03, 0], "target": [-.01, -.1, 0], "up": [1, 0, 0], "fovy": 75},
     },
-    # B2. The arm base is at the far end of the table, (0.42, 0.04, 0.08) facing -x (sim.SO101_BASE), so the scene
-    # camera sits past the near end, off to -y, aimed between the block area, the tray and the arm.
-    # Wrist: gripper frame, where the jaw tips point along local -z (grasp site at z = -0.101); the camera sits
-    # beside the camera mount and looks down past both jaw tips. Menagerie's own wrist_cam is not rendered.
+    # B2. Scene, by eye: the arm base is at the far end of the table, (0.42, 0.04, 0.08) facing -x
+    # (sim.SO101_BASE), so the camera sits past the near end, off to -y, aimed between the block area, tray and arm.
+    # Wrist: Menagerie's own wrist_cam on body camera_mount (so101_xert.xml), rendered as it is defined there.
     "so101": {
         "scene": {"body": "world", "pos": [-.02, -.25, .4], "target": [.3, .04, .15], "up": [0, 0, 1], "fovy": 45},
-        "wrist": {"body": "gripper", "pos": [-.04, .06, -.04], "target": [-.008, 0, -.12], "up": [0, 0, 1], "fovy": 75},
+        "wrist": {"model_camera": "wrist_cam"},
     },
+}
+# Written to xert_cameras.json as "camera_placement".
+PLACEMENT = {
+    "xlerobot_left": "chosen by eye in simulation; not the real SO-101 wrist camera mount or intrinsics",
+    "so101": "scene: chosen by eye in simulation. wrist: Menagerie's wrist_cam, plausibly the 32x32 UVC wrist mount; "
+             "mount pose and fovy 61 are unsourced and not measured on Daniel's arm; measure the real lens FOV before "
+             "any sim-to-real claim",
 }
 SIZE = 128  # Square pixels: a 4x4 grid after ACT's stride-32 ResNet-18 (docs/learn/P2.3.md).
 BLOCK = [f"block.{axis}" for axis in ("x", "y", "z", "qw", "qx", "qy", "qz")]
@@ -93,6 +99,8 @@ def camera_model(robot="xlerobot_left"):
         xml = model_xml()
         spec, fingerprint = mujoco.MjSpec.from_string(xml), model_fingerprint(xml, source)
     for name, camera in CAMERAS[robot].items():
+        if "model_camera" in camera:
+            continue
         added = spec.body(camera["body"]).add_camera(name=name, pos=camera["pos"], fovy=camera["fovy"])
         added.alt.type = mujoco.mjtOrientation.mjORIENTATION_XYAXES
         added.alt.xyaxes = _xyaxes(camera["pos"], camera["target"], camera["up"])
@@ -104,7 +112,7 @@ class CameraRenderer:
     def __init__(self, size=SIZE, robot="xlerobot_left"):
         import mujoco
         from xle_workbench.sim import ROBOTS
-        self.mujoco, self.size = mujoco, size
+        self.mujoco, self.size, self.robot = mujoco, size, robot
         self.cameras, self.joints = CAMERAS[robot], ROBOTS[robot]["joints"]
         self.model, self.model_sha256 = camera_model(robot)
         self.data = mujoco.MjData(self.model)
@@ -120,8 +128,8 @@ class CameraRenderer:
         self.data.qpos[self.block:self.block + 7] = block
         self.mujoco.mj_forward(self.model, self.data)
         images = {}
-        for name in self.cameras:
-            self.renderer.update_scene(self.data, camera=name, scene_option=self.option)
+        for name, camera in self.cameras.items():
+            self.renderer.update_scene(self.data, camera=camera.get("model_camera", name), scene_option=self.option)
             images[f"observation.images.{name}"] = self.renderer.render().copy()
         block = self.data.body("block")
         return images, {"grasp": self.data.site("grasp").xpos.copy(), "tray": self.data.body("tray").xpos.copy(),
@@ -228,10 +236,9 @@ def _render_one(source, staging, renderer, repo_id):
         "reconstruction": "qpos = recorded joint positions + block pose (float32), then mj_forward; tray is static",
         "reconstruction_max_error": errors, "tolerance": TOLERANCE,
         "cameras": {name: {**camera, "feature": f"observation.images.{name}", "height": renderer.size,
-                           "width": renderer.size,
-                           "xyaxes": _xyaxes(camera["pos"], camera["target"], camera["up"]).tolist()}
+                           "width": renderer.size, **_placement(renderer.model, camera)}
                     for name, camera in renderer.cameras.items()},
-        "camera_placement": "chosen by eye in simulation; not the real SO-101 wrist camera mount or intrinsics",
+        "camera_placement": PLACEMENT[renderer.robot],
         "hidden": "all sites (the grasp marker)",
         "image_storage": "LeRobot dtype image: lossless PNG in the data Parquet",
         "model_sha256": renderer.model_sha256, "mujoco_version": renderer.mujoco.__version__,
@@ -242,6 +249,15 @@ def _render_one(source, staging, renderer, repo_id):
         "verification": verification}
     atomic_json(staging / "xert_cameras.json", manifest)
     return verification
+
+
+def _placement(model, camera):
+    """A by-eye camera's axes, or a model camera's pose and fovy in its body frame, as compiled."""
+    if "model_camera" not in camera:
+        return {"xyaxes": _xyaxes(camera["pos"], camera["target"], camera["up"]).tolist()}
+    added = model.camera(camera["model_camera"])
+    return {"body": model.body(added.bodyid[0]).name, "pos": added.pos.tolist(), "quat": added.quat.tolist(),
+            "fovy": float(added.fovy[0])}
 
 
 def _verify(source_table, digests, root, cameras):
