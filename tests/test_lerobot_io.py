@@ -1,0 +1,238 @@
+"""export-lerobot / import-lerobot / to-store. Scripted and synthetic data only: no hardware, no ledger rows."""
+import gc
+import json
+import os
+from pathlib import Path
+import shutil
+
+import numpy as np
+import pytest
+
+from xert.data import lerobot_io as io
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "results/p1.2/recovery_integrated"
+TASK = "Move the block to the tray"
+
+
+def info_only(root, **info):
+    (root / "meta").mkdir(parents=True)
+    (root / "meta/info.json").write_text(json.dumps({"codebase_version": "v3.0", **info}))
+    return root
+
+
+def test_dispatch_is_by_manifest_and_unknown_sources_are_refused(tmp_path):
+    for robot_type in io.HARDWARE:  # 0.6.1 lerobot-record writes "so_follower"; older releases "so101_follower".
+        assert io.source_kind(info_only(tmp_path / robot_type, robot_type=robot_type)) == "so101_follower"
+    export = info_only(tmp_path / "export", robot_type="so101_follower")
+    (export / "xert_export.json").write_text("{}")
+    assert io.source_kind(export) == "xert_export"  # The XERT manifest wins over robot_type.
+    recording = info_only(tmp_path / "recording", robot_type="so101")
+    (recording / "xert_recording.json").write_text("{}")
+    assert io.source_kind(recording) == "xert_recording"
+    (recording / "xert_export.json").write_text("{}")
+    with pytest.raises(ValueError, match="Ambiguous"):
+        io.source_kind(recording)
+    with pytest.raises(ValueError, match="Unknown source"):
+        io.source_kind(info_only(tmp_path / "koch", robot_type="koch_follower"))
+    with pytest.raises(ValueError, match="v3.0"):
+        io.source_kind(info_only(tmp_path / "old", codebase_version="v2.1", robot_type="so101_follower"))
+    with pytest.raises(ValueError, match="Unknown source"):
+        io.import_lerobot(tmp_path / "koch", tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_to_store_refuses_raw_units_and_non_frame_pair_imports(tmp_path):
+    for name, record in {"raw": {"derived": False, "source_kind": "so101_follower", "units": "raw_lerobot"},
+                         "store": {"derived": False, "source_kind": "xert_export", "units": "xert_store"},
+                         "derived": {"derived": True, "source_kind": "so101_follower", "units": "radians"}}.items():
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "import.json").write_text(json.dumps(record))
+        with pytest.raises(ValueError, match="raw_lerobot" if name == "raw" else "frame-pair import"):
+            io.to_store(tmp_path / name, tmp_path / f"{name}-out")
+        assert not (tmp_path / f"{name}-out").exists()
+
+
+# ---- LeRobot 0.6.1 environment from here on ----
+
+@pytest.fixture
+def lerobot():
+    return pytest.importorskip("lerobot")
+
+
+def copy_collection(root, ids):
+    """A collection.json beside a dataset/ Store holding byte copies of real P1.2 episodes."""
+    for identifier in ids:
+        shutil.copytree(SOURCE / "dataset/episodes" / identifier, root / "dataset/episodes" / identifier)
+    (root / "collection.json").write_text(json.dumps({"episode_ids": ids}))
+    return root / "collection.json"
+
+
+def test_a_npz_export_import_restores_both_streams_and_terminal_obs(lerobot, tmp_path):
+    from xle_workbench.storage import Store
+    ids = json.loads((SOURCE / "collection.json").read_text())["episode_ids"][:2]
+    collection = copy_collection(tmp_path / "source", ids)
+    result = io.export_lerobot(collection, tmp_path / "export", task=TASK)
+    assert result["max_abs_error"] == 0
+    record = io.import_lerobot(tmp_path / "export", tmp_path / "import")
+    assert record["source_kind"] == "xert_export" and [m["source_id"] for m in record["episodes"]] == ids
+    source, restored = Store(tmp_path / "source/dataset"), Store(tmp_path / "import/dataset")
+    assert json.loads((tmp_path / "import/collection.json").read_text())["episode_ids"] == \
+        [m["id"] for m in record["episodes"]]
+    for mapping in record["episodes"]:
+        for load in ("load_episode", "load_training_episode"):  # Executed stream, then corrective labels.
+            before, old = getattr(source, load)(mapping["source_id"])
+            after, new = getattr(restored, load)(mapping["id"])
+            assert set(before) == set(after)
+            for key in before:  # observations include the terminal one: T+1 rows.
+                assert before[key].dtype == after[key].dtype
+                np.testing.assert_array_equal(before[key], after[key])
+        assert old["training_action_source"] == new["training_action_source"] == "expert_correction"
+        assert {k: v for k, v in old.items() if k not in io.DERIVED_KEYS} == \
+            {k: v for k, v in new.items() if k not in io.DERIVED_KEYS}
+    assert io._hashes(tmp_path / "import/raw") == io._hashes(tmp_path / "export")
+    with pytest.raises(FileExistsError):
+        io.import_lerobot(tmp_path / "export", tmp_path / "import")
+
+
+@pytest.fixture
+def bench_recording(lerobot, tmp_path):
+    from test_gate_experiment import scripted_session
+    return scripted_session(tmp_path / "session", [3]) / "episode_000000"
+
+
+def test_b_runtime_recording_imports_float32_exact_frame_pairs(bench_recording, tmp_path):
+    from xert.data.recorder import load_runtime_dataset
+    record = io.import_lerobot(bench_recording, tmp_path / "import")
+    manifest = json.loads((bench_recording / "xert_recording.json").read_text())
+    dataset = load_runtime_dataset(bench_recording)
+    expected = {key: np.stack([np.asarray(v) for v in values]) for key, values in dataset.hf_dataset[:].items()
+                if key in ("observation.state", "action", "observation.environment_state", "timestamp")}
+    names = dataset.features["observation.environment_state"]["names"]
+    del dataset
+    gc.collect()
+    with np.load(tmp_path / "import/frames.npz") as frames:
+        frames = dict(frames)
+    assert set(frames) == {"episode_index", "frame_index", "timestamp", "state", "action", "environment_state"}
+    for ours, theirs in (("state", "observation.state"), ("action", "action"),
+                         ("environment_state", "observation.environment_state"), ("timestamp", "timestamp")):
+        assert frames[ours].dtype == np.float32
+        np.testing.assert_array_equal(frames[ours], expected[theirs])
+    np.testing.assert_array_equal(frames["frame_index"], np.arange(3))
+    assert record["columns"]["environment_state"] == names and "block.x" in names
+    assert record["model_sha256"] == manifest["source"]["bench"]["model_sha256"]
+    assert record["units"] == "radians" and "never synthesized" in record["absent"]
+    assert "xert.next_observation" in record["not_imported"]
+    assert io._hashes(tmp_path / "import/raw") == io._hashes(bench_recording)
+    # Derived store: T_e - 1 transitions, normalized by spec limits, reward 0, truncated not terminated.
+    from xle_workbench.storage import Store
+    from xert.spec import load_spec
+    stored = io.to_store(tmp_path / "import", tmp_path / "store")
+    arrays, metadata = Store(tmp_path / "store/dataset").load_episode(stored["episode_ids"][0])
+    limits = load_spec(ROOT / "xert/spec/xlerobot_left.yaml").position_limits
+    np.testing.assert_array_equal(arrays["observations"], frames["state"])
+    np.testing.assert_allclose((arrays["actions"] + 1) / 2 * (limits[:, 1] - limits[:, 0]) + limits[:, 0],
+                               frames["action"][:-1], atol=1e-6)
+    assert not arrays["rewards"].any() and not arrays["terminated"].any() and metadata["derived"] is True
+
+
+def test_b_recording_export_copies_and_refuses_relabeling(bench_recording, tmp_path):
+    from xert.runtime.teleop import TASK as RECORDED
+    assert io.export_lerobot(bench_recording, tmp_path / "copy", task=RECORDED) == {"recordings": 1, "copied": True}
+    assert io._hashes(tmp_path / "copy") == io._hashes(bench_recording)
+    with pytest.raises(ValueError, match="relabelled"):
+        io.export_lerobot(bench_recording, tmp_path / "relabel", task="Something else")
+    assert not (tmp_path / "relabel").exists()
+
+
+# TEST FIXTURE: made-up joint-map values, not measured on any arm. Body joints in degrees, gripper 0-100.
+FIXTURE_SIGN = [1, -1, 1, -1, 1, 1]
+FIXTURE_OFFSET = [2.5, -10.0, 7.25, 0.0, -3.5, 9.0]
+
+
+def fixture_map(path):
+    raw = json.loads(io.JOINT_MAP.read_text())
+    raw["status"] = "TEST FIXTURE: made-up values, not measured; never use for hardware"
+    for entry, sign, offset in zip(raw["joints"], FIXTURE_SIGN, FIXTURE_OFFSET):
+        gripper = entry["units"] == "range_0_100"
+        entry.update(sign=sign, units_per_rad=50.0 if gripper else 180 / np.pi, zero_offset=offset,
+                     min=0.0 if gripper else -180.0, max=100.0 if gripper else 180.0, max_speed=90.0, max_accel=900.0)
+    path.write_text(json.dumps(raw))
+    return path
+
+
+def synthetic_hardware(root, robot_type="so101_follower"):
+    """SYNTHETIC so101_follower-format dataset (scripted values): two episodes, different start poses."""
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.utils.feature_utils import hw_to_dataset_features
+    motors = {f"{name}.pos": float for name in
+              ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")}
+    features = {**hw_to_dataset_features(motors, "observation"), **hw_to_dataset_features(motors, "action")}
+    dataset = LeRobotDataset.create(repo_id="synthetic/so101", root=root, robot_type=robot_type, fps=30,
+                                    features=features, use_videos=False)
+    episodes = []
+    for start, length in ((np.float32([0, -20, 15, 5, 0, 10]), 3), (np.float32([12.5, 3, -25, -8, 30, 60]), 4)):
+        state = start + np.arange(length, dtype=np.float32)[:, None] * np.float32(0.087890625)  # One STS3215 step.
+        action = state + np.float32(0.5)
+        for row in range(length):
+            dataset.add_frame({"observation.state": state[row], "action": action[row], "task": "synthetic"})
+        dataset.save_episode(parallel_encoding=False)
+        episodes.append((state, action))
+    dataset.finalize()
+    del dataset
+    gc.collect()
+    return episodes
+
+
+def test_c_hardware_import_reencodes_exactly_and_tbd_map_is_refused(lerobot, tmp_path):
+    episodes = synthetic_hardware(tmp_path / "hw")
+    with pytest.raises(ValueError, match="TBD"):
+        io.import_lerobot(tmp_path / "hw", tmp_path / "refused")  # The real, unmeasured P6 map.
+    assert not (tmp_path / "refused").exists()
+    joint_map = fixture_map(tmp_path / "fixture_map.json")
+    record = io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=joint_map)
+    assert record["units"] == "radians" and record["joint_map"]["sha256"] == io.sha256(joint_map)
+    with np.load(tmp_path / "import/frames.npz") as frames:
+        frames = dict(frames)
+    sign, offset = np.asarray(FIXTURE_SIGN, float), np.asarray(FIXTURE_OFFSET, float)
+    scale = np.asarray([180 / np.pi] * 5 + [50.0])
+    raw_state = np.concatenate([state for state, _ in episodes])
+    raw_action = np.concatenate([action for _, action in episodes])
+    assert 0.0 in raw_state  # Includes exact zeros, where cancellation could break re-encoding.
+    for key, raw in (("state", raw_state), ("action", raw_action)):
+        assert frames[key].dtype == np.float64
+        np.testing.assert_array_equal((sign * scale * frames[key] + offset).astype(np.float32), raw)
+    # Two independent episodes; LeRobot's timestamps restart at 0.
+    np.testing.assert_array_equal(frames["episode_index"], [0, 0, 0, 1, 1, 1, 1])
+    np.testing.assert_array_equal(frames["frame_index"], [0, 1, 2, 0, 1, 2, 3])
+    np.testing.assert_allclose(frames["timestamp"], np.array([0, 1, 2, 0, 1, 2, 3]) / 30)
+    from xle_workbench.storage import Store
+    stored = io.to_store(tmp_path / "import", tmp_path / "store")
+    store = Store(tmp_path / "store/dataset")
+    lengths = []
+    for episode, identifier in enumerate(stored["episode_ids"]):
+        arrays, metadata = store.load_episode(identifier)
+        rows = frames["episode_index"] == episode
+        assert metadata["episode_index"] == episode
+        # Successors come from the same episode only: no transition from episode 0's last frame to episode 1.
+        np.testing.assert_array_equal(arrays["observations"], frames["state"][rows].astype(np.float32))
+        lengths.append(len(arrays["actions"]))
+    assert lengths == [2, 3]
+    # --raw-units needs no map, keeps native values, and to-store refuses it.
+    raw = io.import_lerobot(tmp_path / "hw", tmp_path / "raw-import", raw_units=True)
+    with np.load(tmp_path / "raw-import/frames.npz") as frames:
+        np.testing.assert_array_equal(frames["state"], raw_state)
+    assert raw["units"] == "raw_lerobot"
+    with pytest.raises(ValueError, match="raw_lerobot"):
+        io.to_store(tmp_path / "raw-import", tmp_path / "raw-store")
+
+
+def test_to_store_refuses_out_of_limit_actions(lerobot, tmp_path):
+    synthetic_hardware(tmp_path / "hw")
+    joint_map = json.loads(fixture_map(tmp_path / "map.json").read_text())
+    joint_map["joints"][5]["zero_offset"] = 200.0  # Gripper 0-100 now maps below its spec limit.
+    (tmp_path / "map.json").write_text(json.dumps(joint_map))
+    io.import_lerobot(tmp_path / "hw", tmp_path / "import", joint_map=tmp_path / "map.json")
+    with pytest.raises(ValueError, match="outside spec position limits"):
+        io.to_store(tmp_path / "import", tmp_path / "store")
+    assert not (tmp_path / "store").exists()
