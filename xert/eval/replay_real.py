@@ -26,6 +26,8 @@ from xle_workbench.storage import atomic_json, sha256
 SPEC = ROOT / "xert/spec/so101.yaml"
 # LeRobot writes timestamp = frame_index / fps; anything else means dropped or resampled frames.
 TIMESTAMP_TOLERANCE_S = 1e-4
+# Owner decision: the same 1e-6 rad slack as to-store; float32-degree round trips land up to ~1.1e-7 rad past a limit.
+LIMIT_SLACK_RAD = 1e-6
 NOTES = ("Open-loop replay of recorded goal positions (action) on the MuJoCo SO-101 position actuators, each "
          "episode reset to its recorded first state; RMSE against recorded observation.state. Not system "
          "identification: no parameter was fitted, and the servo's internal PID differs from the MuJoCo position "
@@ -89,10 +91,18 @@ def run_episode(backend, action):
     """(sim joint positions, sim times) for frames 0..T-1; frame t+1 follows action[t] held for one frame."""
     q, times = [backend.read_state().q], [backend.data.time]
     for target in action[:-1]:  # The last action has no recorded successor state.
-        backend.send_targets(target, backend.data.time)  # Refuses targets outside spec limits; never clips.
+        backend.send_targets(target, backend.data.time)  # Refuses targets past the limits by >1e-10 rad.
         q.append(backend.read_state().q)
         times.append(backend.data.time)
     return np.array(q), np.array(times)
+
+
+def within_limits(action, limits):
+    """(action clipped to the spec limits, max excess in rad); refuses anything past a limit by more than the slack."""
+    excess = float(np.max(np.maximum(action - limits[:, 1], limits[:, 0] - action), initial=0.0))
+    if excess > LIMIT_SLACK_RAD:
+        raise ValueError(f"Recorded action {excess:.3g} rad outside the spec limits (slack {LIMIT_SLACK_RAD}); refused")
+    return np.clip(action, limits[:, 0], limits[:, 1]), max(excess, 0.0)
 
 
 def _rmse(errors):
@@ -150,12 +160,14 @@ def replay_real(dataset, output, *, ledger=False):
     fps = record["fps"]
     asset_dt = spec.load_model().opt.timestep
     dt, substeps = replay_timing(fps, asset_dt)
-    names, traces = list(spec.joint_names), []
+    names, traces, max_excess = list(spec.joint_names), [], 0.0
     for episode in np.unique(frames["episode_index"]):
         rows = frames["episode_index"] == episode
         real, action = frames["state"][rows].astype(np.float64), frames["action"][rows].astype(np.float64)
         if len(real) < 2:
             raise ValueError(f"Episode {episode} has one frame; nothing to compare")
+        action, excess = within_limits(action, spec.position_limits)
+        max_excess = max(max_excess, excess)
         sim, times = run_episode(start_episode(spec, fps, dt, real[0]), action)
         if not np.allclose(times, np.arange(len(real)) / fps, rtol=0, atol=1e-9):
             raise RuntimeError("Sim time did not advance exactly 1/fps per frame")
@@ -190,6 +202,7 @@ def replay_real(dataset, output, *, ledger=False):
                  f"- joint map sha256 `{record['joint_map']['sha256']}`",
                  f"- {fps} fps; dt {dt!r} s = 1/({fps}*{substeps}), {substeps} physics steps per frame "
                  f"(asset dt {asset_dt!r} s); every recorded frame used, none resampled",
+                 f"- actions clipped to the spec limits within {LIMIT_SLACK_RAD} rad; max excess {max_excess!r} rad",
                  f"- n = frames compared per joint (frames 1..T-1 of each episode); plots: {plots}", "",
                  "| episode | joint | n | RMSE (rad) | RMSE (deg) |", "|---|---|---|---|---|"]
         lines += [f"| {r['episode']} | {r['joint']} | {r['n']} | {r['rmse_rad']:.6g} | {r['rmse_deg']:.6g} |"
@@ -201,6 +214,7 @@ def replay_real(dataset, output, *, ledger=False):
                     "spec_sha256": record["spec_sha256"], "model_path": str(spec.model_path),
                     "model_sha256": sha256(spec.model_path), "fps": fps, "timestep_s": dt,
                     "substeps_per_frame": substeps, "asset_timestep_s": asset_dt,
+                    "action_limit_slack_rad": LIMIT_SLACK_RAD, "action_max_limit_excess_rad": max_excess,
                     "timing_rule": "k = ceil(1/(fps*asset_dt)), dt = 1/(fps*k); sim time checked = frame/fps (1e-9 s)",
                     "alignment": "sim[0] = state[0]; sim[t+1] after action[t] held 1/fps; RMSE over frames 1..T-1",
                     "reset": "fresh MjData per episode at its recorded first state, qvel 0; nothing carried over",

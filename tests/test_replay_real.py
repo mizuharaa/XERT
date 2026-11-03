@@ -155,6 +155,22 @@ def test_inputs_outside_the_import_contract_are_refused(tmp_path, change, messag
     assert not (tmp_path / "replay").exists()
 
 
+def test_actions_within_1e_6_rad_of_a_limit_are_clipped_and_beyond_are_refused(tmp_path):
+    for excess, accepted in ((5e-7, True), (2e-6, False)):
+        state, action = simulate(starts=STARTS[:1])[0]
+        action = action.copy()
+        action[3, 5] = SPEC.position_limits[5, 1] + excess  # A gripper command just past its upper limit.
+        dataset = write_import(tmp_path / f"import-{excess}", [(state, action)])
+        out = tmp_path / f"replay-{excess}"
+        if accepted:
+            rr.replay_real(dataset, out)
+            assert json.loads((out / "replay.json").read_text())["action_max_limit_excess_rad"] == pytest.approx(excess)
+        else:
+            with pytest.raises(ValueError, match="outside the spec limits"):
+                rr.replay_real(dataset, out)
+            assert not out.exists()
+
+
 def test_a_direct_lerobot_dataset_is_refused(tmp_path):
     (tmp_path / "lerobot/meta").mkdir(parents=True)
     (tmp_path / "lerobot/meta/info.json").write_text(json.dumps({"codebase_version": "v3.0", "robot_type": "so_follower"}))
