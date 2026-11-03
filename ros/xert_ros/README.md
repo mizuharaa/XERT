@@ -59,14 +59,30 @@ setpoint. It also keeps the only message dependency `sensor_msgs`.
   Note: a subscriber that requires *reliable* will not match this
   publisher. Use best effort (or the default "system default"/auto QoS in
   `ros2 topic echo`).
-- **Commands: reliable, volatile, depth 1.** A dropped command matters: the
-  arm would act on an older target, so delivery is reliable. A *queue* of
-  old commands is dangerous: after a network hiccup the arm would replay
-  stale targets in a burst. Depth 1 keeps only the newest. *Volatile*: a
-  node that restarts must never receive a command that was sent before it
-  was running. Stale commands still have to be caught in the node itself
-  (hold, then return to rest, as in `xert/safety`); QoS only limits the
-  queue.
+- **Commands: reliable, volatile, depth 1.** A command is the last
+  setpoint the sender has safety-checked, and the node keeps acting on it
+  until a newer one arrives. If it is lost, the arm keeps the previous target
+  instead. That matters most for the final command before the operator stops
+  (the pose the arm should settle at), because no later message replaces it.
+  A *queue* of old commands is dangerous: after a network hiccup the arm
+  would replay stale targets in a burst. Depth 1 keeps only the newest, so
+  reliability adds at most a retry of one fresh message, never a backlog.
+  *Volatile*: a node that restarts must never receive a command that was
+  sent before it was running.
+  - Why not best effort, when a lost state is replaced 40 ms later? For a
+    steady 25 Hz stream, best effort would also work, and it would be a fair
+    choice. Reliable costs latency only on a loss: the repaired sample
+    arrives later than the original would have, by at least one round trip
+    plus the DDS repair delay (not measured here). That late sample is still
+    safe, because the node ages each command by its `header.stamp` and holds
+    once it is older than 0.2 s (`xert/safety/watchdog.py`). The stale check
+    bounds how old an executed command can be, not the QoS. So reliable
+    trades a rare extra delay for not losing sparse or final setpoints.
+  - **Matching rule:** a reliable subscription does *not* match a
+    best-effort publisher. Every command publisher (for example a
+    retargeter node) must use reliable QoS. Otherwise no connection forms
+    and every command is dropped, and the only sign is an incompatible-QoS
+    warning in the log.
 
 ## Build and run (Ubuntu 24.04 + ROS 2 Jazzy)
 
