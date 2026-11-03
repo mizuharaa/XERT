@@ -114,6 +114,11 @@ Measured on this branch (before → after B2):
 | equivalence_check | 16 seeds, identical, max diff 0.0 | same |
 | combined env, the 5 listed files (+ `test_so101_cameras.py` after) | 45 passed | 53 passed |
 
+After merging `origin/integration/sim-mvp` @ ca9c90c (slice D; no C++ change, no rebuild): base pytest 190 passed,
+44 skipped, 5 xfailed, 8 subtests; ctest 2/2; equivalence 16 seeds identical, max diff 0.0; combined env on
+`test_cameras`, `test_so101_cameras`, `test_lerobot_export`, `test_lerobot_io`, `test_replay_real`: 52 passed,
+1 xfailed.
+
 Also run once in the combined env (no baseline, they do not import the changed modules): `test_gate_experiment`,
 `test_teleop`, `test_lerobot_act`, `test_quality` gave 35 passed, 1 skipped.
 
@@ -145,9 +150,6 @@ None. This slice has no CORE logic.
   and not measured on Daniel's arm; measure the real lens FOV before any sim-to-real claim.
 - The SO-101 bench NPZ path is tested on 3 held steps only. Real SO-101 Store episodes arrive with the TODO(daniel)
   expert.
-- While I worked, `origin/integration/sim-mvp` moved past 89e53d4 (slice D merged). This branch is not rebased.
-  `git merge-tree` shows two textual conflicts, both of which keep both sides:
-  - `.github/workflows/optional.yml`: the pytest file lists.
-  - `docs/CAMERA_KEYS.md`.
-
-  `xert/data/lerobot_io.py` and `tests/test_lerobot_io.py` auto-merge. Re-run the combined-env gate after the merge.
+- Merged `origin/integration/sim-mvp` @ ca9c90c. Conflicts resolved: `optional.yml` lists both
+  `test_so101_cameras.py` and `test_replay_real.py` in the lerobot and teleop jobs; `docs/CAMERA_KEYS.md` takes the
+  owner's "Decided (2026-11-03)" bullet plus one B2 line on the SO-101 sim camera poses.
