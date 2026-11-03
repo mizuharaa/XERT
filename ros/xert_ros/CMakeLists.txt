@@ -21,7 +21,7 @@ add_executable(xert_node src/main.cpp)
 target_link_libraries(xert_node xert_node_core)
 
 install(TARGETS xert_node DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY urdf DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY launch rviz urdf DESTINATION share/${PROJECT_NAME})
 
 # ponytail: the SO-101 meshes are already vendored (Apache-2.0) for MuJoCo,
 # so install them from there instead of keeping a second 17 MB copy. This
