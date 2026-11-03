@@ -171,6 +171,21 @@ def test_actions_within_1e_6_rad_of_a_limit_are_clipped_and_beyond_are_refused(t
             assert not out.exists()
 
 
+def test_episodes_already_moving_at_frame_1_are_flagged_not_trimmed(tmp_path):
+    still = np.tile(STARTS[0], (5, 1))
+    still[1, 0] += 2 * rr.ENCODER_STEP_RAD  # Two encoder steps: jitter-sized, at the threshold, not moving.
+    moving = np.tile(STARTS[1], (5, 1))
+    moving[1:, 1] += 3 * rr.ENCODER_STEP_RAD  # Three steps by frame 1.
+    dataset = write_import(tmp_path / "import", [(still, still.copy()), (moving, moving.copy())])
+    rr.replay_real(dataset, tmp_path / "replay")
+    starts = json.loads((tmp_path / "replay/replay.json").read_text())["episode_starts"]
+    assert [e["moving_start"] for e in starts] == [False, True]
+    assert starts[1]["start_speed_rad_s"] == pytest.approx(3 * rr.ENCODER_STEP_RAD * FPS)
+    summary = (tmp_path / "replay/summary.md").read_text()
+    assert "| 0 | " in summary and "| false |" in summary and "| true |" in summary
+    assert per_episode(tmp_path / "replay")[("1", "gripper")][1] == 4  # Every frame kept.
+
+
 def test_a_direct_lerobot_dataset_is_refused(tmp_path):
     (tmp_path / "lerobot/meta").mkdir(parents=True)
     (tmp_path / "lerobot/meta/info.json").write_text(json.dumps({"codebase_version": "v3.0", "robot_type": "so_follower"}))

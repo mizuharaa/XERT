@@ -29,6 +29,12 @@ SPEC = ROOT / "xert/spec/so101.yaml"
 TIMESTAMP_TOLERANCE_S = 1e-4
 # Owner decision: the same 1e-6 rad slack as to-store; float32-degree round trips land up to ~1.1e-7 rad past a limit.
 LIMIT_SLACK_RAD = 1e-6
+# Path (c) body joints are STS3215 encoder readings in degrees: one step is 2*pi/4096 rad (0.088 deg), and an arm at
+# rest can read +-1 step between frames. An episode is flagged as a moving start (not trimmed, not corrected)
+# when a body joint moves more than 2 steps between frames 0 and 1, i.e. max |state[1]-state[0]|*fps above
+# 2*step*fps (0.092 rad/s at 30 fps). The gripper (range_0_100) is excluded: its step depends on its calibration.
+ENCODER_STEP_RAD = 2 * math.pi / 4096
+MOVING_START_STEPS = 2
 NOTES = ("Open-loop replay of recorded goal positions (action) on the MuJoCo SO-101 position actuators, each "
          "episode reset to its recorded first state; RMSE against recorded observation.state. Not system "
          "identification: no parameter was fitted, and the servo's internal PID differs from the MuJoCo position "
@@ -163,7 +169,7 @@ def replay_real(dataset, output, *, ledger=False):
     fps = record["fps"]
     asset_dt = spec.load_model().opt.timestep
     dt, substeps = replay_timing(fps, asset_dt)
-    names, traces, max_excess = list(spec.joint_names), [], 0.0
+    names, traces, starts, max_excess = list(spec.joint_names), [], [], 0.0
     for episode in np.unique(frames["episode_index"]):
         rows = frames["episode_index"] == episode
         real, action = frames["state"][rows].astype(np.float64), frames["action"][rows].astype(np.float64)
@@ -173,6 +179,9 @@ def replay_real(dataset, output, *, ledger=False):
         max_excess = max(max_excess, excess)
         sim, times = run_episode(start_episode(spec, fps, dt, real[0]), action)
         traces.append((real, sim, int(episode), times))
+        speed = float(np.max(np.abs(real[1, :5] - real[0, :5]))) * fps
+        starts.append({"episode": int(episode), "start_speed_rad_s": speed,
+                       "moving_start": speed > MOVING_START_STEPS * ENCODER_STEP_RAD * fps})
     summary = []
     for real, sim, episode, _ in traces:
         summary += [{"episode": episode, "joint": n, "n": len(real) - 1, "rmse_rad": r}
@@ -208,6 +217,10 @@ def replay_real(dataset, output, *, ledger=False):
                  "| episode | joint | n | RMSE (rad) | RMSE (deg) |", "|---|---|---|---|---|"]
         lines += [f"| {r['episode']} | {r['joint']} | {r['n']} | {r['rmse_rad']:.6g} | {r['rmse_deg']:.6g} |"
                   for r in summary]
+        lines += ["", f"Start assumed at rest (qvel 0). moving_start: a body joint moved more than {MOVING_START_STEPS} "
+                  f"encoder steps between frames 0 and 1 ({MOVING_START_STEPS * ENCODER_STEP_RAD * fps:.4g} rad/s); "
+                  "flagged, not trimmed.", "", "| episode | start speed (rad/s) | moving_start |", "|---|---|---|"]
+        lines += [f"| {e['episode']} | {e['start_speed_rad_s']:.4g} | {str(e['moving_start']).lower()} |" for e in starts]
         (staging / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         artifacts = {p.relative_to(staging).as_posix(): sha256(p) for p in sorted(staging.rglob("*")) if p.is_file()}
         manifest = {"version": 1, "command": "replay-real", "dataset": str(dataset), "import_sha256": import_sha256,
@@ -219,6 +232,8 @@ def replay_real(dataset, output, *, ledger=False):
                     "timing_rule": "k = ceil(1/(fps*asset_dt)), dt = 1/(fps*k); MuJoCoBackend checks 1/fps per frame (1e-9 s)",
                     "alignment": "sim[0] = state[0]; sim[t+1] after action[t] held 1/fps; RMSE over frames 1..T-1",
                     "reset": "fresh MjData per episode at its recorded first state, qvel 0; nothing carried over",
+                    "moving_start_rule": f"max body-joint |state[1]-state[0]|*fps > {MOVING_START_STEPS} encoder steps (2*pi/4096 rad) * fps = {MOVING_START_STEPS * ENCODER_STEP_RAD * fps!r} rad/s; flagged only, qvel 0 still assumed",
+                    "episode_starts": starts,
                     "episodes": [episode for _, _, episode, _ in traces], "plots": plots, "notes": NOTES,
                     "summary": summary, "artifact_sha256": artifacts}
         atomic_json(staging / "replay.json", manifest)
