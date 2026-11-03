@@ -1,0 +1,43 @@
+name: ROS 2 Jazzy package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xert_ros:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container: ros:jazzy
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build and test dependencies
+        # Exec-only deps (rviz2, robot_state_publisher, launch_ros) are not
+        # needed to build or test, and rviz2 pulls in Qt and Ogre.
+        run: |
+          apt-get update
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths ros --ignore-src -y --rosdistro jazzy \
+            -t buildtool -t build -t build_export -t test
+      - name: Build
+        working-directory: ros
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --packages-select xert_ros --event-handlers console_direct+
+      - name: Test (linters + gtest)
+        working-directory: ros
+        env:
+          # ament_cppcheck skips cppcheck 2.x (Ubuntu 24.04 ships 2.x) as too slow
+          # unless this is set; three source files are fast enough.
+          AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS: '1'
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon test --packages-select xert_ros --event-handlers console_direct+
+          colcon test-result --verbose

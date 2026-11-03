@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/TheRobotStudio/SO-ARM100",
+  "commit": "a758567c3978dfeefe282ede0500085a48fe8f78",
+  "upstream_file": "Simulation/SO101/so101_new_calib.urdf",
+  "license": "Apache-2.0",
+  "license_evidence": "gh api repos/TheRobotStudio/SO-ARM100 reports license.spdx_id Apache-2.0; LICENSE here is the upstream root LICENSE at the pinned commit, byte-identical to assets/menagerie/robotstudio_so101/LICENSE",
+  "sha256": {
+    "upstream so101_new_calib.urdf": "3a65d2d35e68a8d2f0c2cc176d19b884506543c93ba72980145b80abe276022c",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "so101.urdf (this file, after the edits below)": "1bba57ad081b58f095bdd3686b7d68bfc58c98037da19c7c016b25ee42aa5ef3"
+  },
+  "edits": [
+    "mesh filename=\"assets/X.stl\" -> \"package://xert_ros/meshes/X.stl\" (34 references)",
+    "revolute joint lower/upper set to xert/spec/so101.yaml position_limits (upstream rounds them to 5-6 digits; largest change 3e-6 rad)",
+    "revolute joint velocity 10 -> xert/spec/so101.yaml velocity_limits (1.0 rad/s); effort stays upstream 10",
+    "one provenance comment added after the XML declaration"
+  ],
+  "meshes": "Not copied. CMakeLists.txt installs assets/menagerie/robotstudio_so101/assets/*.stl as share/xert_ros/meshes. The 13 STL files this URDF uses have the same git blob hashes as Simulation/SO101/assets/ at the pinned commit (checked with gh api contents listing vs git hash-object)."
+}
