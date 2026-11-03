@@ -21,6 +21,18 @@ add_executable(xert_node src/main.cpp)
 target_link_libraries(xert_node xert_node_core)
 
 install(TARGETS xert_node DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY urdf DESTINATION share/${PROJECT_NAME})
+
+# ponytail: the SO-101 meshes are already vendored (Apache-2.0) for MuJoCo,
+# so install them from there instead of keeping a second 17 MB copy. This
+# ties the package to the XERT checkout; copy them in if it is ever released.
+set(_so101_assets
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/menagerie/robotstudio_so101")
+install(DIRECTORY "${_so101_assets}/assets/"
+  DESTINATION share/${PROJECT_NAME}/meshes
+  FILES_MATCHING PATTERN "*.stl")
+install(FILES "${_so101_assets}/LICENSE"
+  DESTINATION share/${PROJECT_NAME}/meshes)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
