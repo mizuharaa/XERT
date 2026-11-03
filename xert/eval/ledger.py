@@ -53,8 +53,11 @@ def validate_row(row: dict) -> None:
         raise ValueError("Invalid ledger backend or git_dirty flag")
     # Slice D: MuJoCo executed a replay whose reference data came from hardware; never a hardware result.
     if "reference_backend" in row and (row["reference_backend"] != "so101_hw" or row["backend"] != "mujoco"
-                                       or not re.fullmatch(r"[0-9a-f]{64}", str(row.get("import_sha256")))):
-        raise ValueError("A reference_backend row needs backend mujoco, reference_backend so101_hw and import_sha256")
+                                       or not re.fullmatch(r"[0-9a-f]{64}", str(row.get("import_sha256")))
+                                       or not re.fullmatch(r"[0-9a-f]{64}", str(row.get("calibration_sha256")))
+                                       or not isinstance(row.get("robot_id"), str) or not row["robot_id"].strip()):
+        raise ValueError("A reference_backend row needs backend mujoco, reference_backend so101_hw, import_sha256, "
+                         "calibration_sha256 and robot_id")
     for name in ("slice", "experiment", "embodiment", "metric", "config_path", "notes"):
         if not isinstance(row[name], str) or not row[name].strip():
             raise ValueError(f"Ledger {name} must be nonempty text")

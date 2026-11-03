@@ -49,7 +49,7 @@ def simulate(starts=STARTS, kp_scale=1.0):
 
 
 def write_import(root, episodes, **overrides):
-    """A SYNTHETIC path (c)-format import (frames.npz + import.json); no raw/ copy, so never ledger-eligible."""
+    """A SYNTHETIC path (c)-format import (frames.npz + import.json) with no raw/ copy unless a test adds one."""
     root.mkdir()
     lengths = [len(state) for state, _ in episodes]
     frame_index = np.concatenate([np.arange(n) for n in lengths])
@@ -194,11 +194,28 @@ def test_a_direct_lerobot_dataset_is_refused(tmp_path):
     assert not (tmp_path / "replay").exists()
 
 
-def test_ledger_rows_are_refused_without_a_verified_raw_recording(tmp_path):
-    dataset = write_import(tmp_path / "import", simulate(starts=STARTS[:1]))
-    with pytest.raises(ValueError, match="Refusing ledger rows"):
-        rr.replay_real(dataset, tmp_path / "replay", ledger=True)
-    assert read_rows() == [] and not (tmp_path / "replay").exists()
+def test_ledger_rows_need_a_verified_raw_recording_and_the_calibration_provenance(tmp_path):
+    from xert.data.lerobot_io import _hashes
+    episodes = simulate(starts=STARTS[:1])
+    calibration = {"sha256": "cd" * 32, "robot_id": "follower_arm"}
+    no_raw = write_import(tmp_path / "no-raw", episodes, calibration=calibration)
+    with pytest.raises(ValueError, match="no verified raw/"):
+        rr.replay_real(no_raw, tmp_path / "replay", ledger=True)
+    for name, extra, refused in (("no-calibration", {}, True), ("calibrated", {"calibration": calibration}, False)):
+        raw = tmp_path / f"{name}-raw/meta"
+        raw.mkdir(parents=True)
+        (raw / "info.json").write_text("{}")  # Stand-in for the bit-exact copy import-lerobot keeps.
+        dataset = write_import(tmp_path / name, episodes, source_sha256=_hashes(raw.parent), **extra)
+        raw.parent.rename(dataset / "raw")
+        if refused:
+            with pytest.raises(ValueError, match="calibration sha256 and robot id"):
+                rr.replay_real(dataset, tmp_path / "replay", ledger=True)
+            assert read_rows() == [] and not (tmp_path / "replay").exists()
+        else:
+            rr.replay_real(dataset, tmp_path / "replay", ledger=True)  # Temp ledger (conftest).
+            rows = read_rows()
+            assert len(rows) == 6 and all(r["calibration_sha256"] == "cd" * 32 and r["robot_id"] == "follower_arm"
+                                          for r in rows)
 
 
 @pytest.mark.xfail(strict=True, raises=NotImplementedError,
@@ -217,8 +234,12 @@ def test_fit_recovers_a_known_gain_and_generalizes_to_a_held_out_episode(tmp_pat
 
 def test_lerobot_import_then_replay_keeps_shas_and_writes_reference_backend_rows(tmp_path):
     pytest.importorskip("lerobot")
-    from test_lerobot_io import hardware_import
-    dataset = hardware_import(tmp_path)
+    from test_lerobot_io import fixture_calibration, fixture_map, synthetic_hardware
+    from xert.data.lerobot_io import import_lerobot
+    synthetic_hardware(tmp_path / "hw")
+    dataset = tmp_path / "import"
+    import_lerobot(tmp_path / "hw", dataset, joint_map=fixture_map(tmp_path / "map.json"), motor_units="degrees",
+                   calibration=fixture_calibration(tmp_path / "follower_arm.json"))
     rr.replay_real(dataset, tmp_path / "replay", ledger=True)  # Temp ledger (conftest): synthetic data.
     manifest = json.loads((tmp_path / "replay/replay.json").read_text())
     record = json.loads((dataset / "import.json").read_text())
@@ -228,4 +249,5 @@ def test_lerobot_import_then_replay_keeps_shas_and_writes_reference_backend_rows
     for row in rows:
         assert row["backend"] == "mujoco" and row["reference_backend"] == "so101_hw"
         assert row["import_sha256"] == manifest["import_sha256"] and row["n"] == 2 + 3
+        assert row["calibration_sha256"] == record["calibration"]["sha256"] and row["robot_id"] == "follower_arm"
         assert "not system identification" in row["notes"].lower()

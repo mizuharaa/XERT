@@ -104,9 +104,10 @@ def test_wilson_boundary_evaluations_are_recordable(tmp_path):
 
 
 def test_reference_backend_needs_mujoco_so101_hw_and_the_import_sha():
-    row = {**sample_row(), "reference_backend": "so101_hw", "import_sha256": "ab" * 32}
+    row = {**sample_row(), "reference_backend": "so101_hw", "import_sha256": "ab" * 32,
+           "calibration_sha256": "cd" * 32, "robot_id": "follower_arm"}
     ledger.validate_row(row)
     for change in ({"backend": "so101_hw"}, {"reference_backend": "mujoco"}, {"import_sha256": None},
-                   {"import_sha256": "AB" * 32}):
+                   {"import_sha256": "AB" * 32}, {"calibration_sha256": None}, {"robot_id": " "}):
         with pytest.raises(ValueError, match="reference_backend"):
             ledger.validate_row({**row, **change})

@@ -154,10 +154,14 @@ def _plots(staging, names, traces, fps):
 
 
 def _check_raw(dataset, record):
-    """Ledger rows only for a real hardware import whose raw/ copy still matches the recorded source hashes."""
+    """Ledger rows only for a hardware import whose raw/ copy matches its source hashes and that names its arm."""
     if record.get("lerobot_robot_type") not in HARDWARE or not (dataset / "raw").is_dir() \
             or _hashes(dataset / "raw") != record.get("source_sha256"):
         raise ValueError("Refusing ledger rows: no verified raw/ hardware recording behind this import")
+    calibration = record.get("calibration") or {}
+    if not re.fullmatch(r"[0-9a-f]{64}", str(calibration.get("sha256"))) or not isinstance(calibration.get("robot_id"), str)             or not calibration["robot_id"].strip():
+        raise ValueError("Refusing ledger rows: import.json has no calibration sha256 and robot id "
+                         "(re-import with `xert import-lerobot --calibration <robot.id>.json`)")
 
 
 def replay_real(dataset, output, *, ledger=False):
@@ -256,6 +260,7 @@ def _append_rows(output, record, manifest):
                         seeds={"train": [], "eval": []}, config_path=artifact_path(output / "replay.json"),
                         artifact_paths=list(hashes), artifact_sha256=hashes,
                         import_sha256=manifest["import_sha256"], joint_map_sha256=manifest["joint_map_sha256"],
+                        calibration_sha256=record["calibration"]["sha256"], robot_id=record["calibration"]["robot_id"],
                         notes=f"{NOTES} Pooled over {len(manifest['episodes'])} episodes; per-episode in summary.csv.")
         append_row(entry)
         print(json.dumps(entry))

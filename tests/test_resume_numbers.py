@@ -69,7 +69,8 @@ def test_dirty_rows_are_labelled(capsys):
 
 
 def test_reference_backend_row_is_a_simulation_replay_never_hardware(capsys):
-    replay = _row(0.01, 1, metric="replay_position_rmse_rad", reference_backend="so101_hw", import_sha256="ab" * 32)
+    replay = _row(0.01, 1, metric="replay_position_rmse_rad", reference_backend="so101_hw", import_sha256="ab" * 32,
+                  calibration_sha256="cd" * 32, robot_id="follower_arm")
     out = _run(capsys, [replay, {**_row(0.5, 1, metric="hw"), "backend": "so101_hw"}])
 
     assert "backend simulation replay against hardware recording (mujoco vs so101_hw)" in out
