@@ -6,6 +6,8 @@
 #include <utility>
 
 namespace reach {
+// Must match xle_workbench/sim.py ROBOTS["xlerobot_left"]: this default serves the four-argument callers
+// (reach_trials, reach_tests, the old pybind call); Python passes its copy explicitly.
 Robot xlerobot_left() {
     return {{"Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "Jaw_L"}, "grasp",
             {0, 1.0, 1.2, -.6, 0, 1.0}, 25, true};
