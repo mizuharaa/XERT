@@ -11,7 +11,7 @@ Nothing renames a key between recording, training and rollout.
 
 | Stage | Code | Keys |
 | --- | --- | --- |
-| Hardware recording | `lerobot/robots/so_follower/so_follower.py:70-76` turns each `config.cameras` key into an observation feature. `lerobot/utils/feature_utils.py:94` adds the `observation.images.` prefix (`OBS_IMAGES`, `lerobot/utils/constants.py:25`). | `observation.images.<config key>` |
+| Hardware recording | `lerobot/robots/so_follower/so_follower.py:70-76` turns each `config.cameras` key into an observation feature. `lerobot/utils/feature_utils.py:94` builds the key as the literal `f"{prefix}.images.{key}"`, not through the `OBS_IMAGES` constant (`lerobot/utils/constants.py:25`), which spells the same string. A depth-enabled camera adds a second feature `<key>_depth` (`so_follower.py:75-76`), so it becomes `observation.images.<key>_depth`. | `observation.images.<config key>` (and `<config key>_depth`) |
 | Hardware rollout | `lerobot/utils/feature_utils.py:134` (`build_dataset_frame`) removes the same prefix to find the camera by its config key. | same |
 | Sim cameras | `xert/data/cameras.py:24-27` (`CAMERAS`), written at `:81` and `:140` | `observation.images.scene`, `observation.images.wrist` |
 | Sim export | `xert export-lerobot --cameras` runs `render-cameras` on the P2.1 export, so it has the same keys | `observation.images.scene`, `observation.images.wrist` |
