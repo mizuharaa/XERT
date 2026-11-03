@@ -1,0 +1,21 @@
+# XERT task tracker (SO-101 track)
+
+Plan: `PLAN.md` (local, not committed). Codex approved it on 2026-11-02 after 3 rounds; findings R1–R8 were all accepted.
+Owner rules: "Daniel's portfolio rules" in `~/AGENTS.md` and `~/.claude/CLAUDE.md`. CORE logic is left as `TODO(daniel):`.
+Each slice has its own handoff in this folder: what changed, why, how to verify, 3 interview questions, and its TODO(daniel) list.
+
+| Slice | What | Branch | Status | Handoff |
+| --- | --- | --- | --- | --- |
+| R1 | Ubuntu 24.04 CMake + CI (CTest, pytest, equivalence) | done in P0.3 | Already done: `linux.yml` on every push | [P0.3 note](../learn/P0.3.md) |
+| E | ROS 2 Jazzy `xert_ros` scaffold, URDF, RViz, launch, QoS README | `feat/e-xert-ros` | Building | `E-xert-ros.md` |
+| C | `xert export-lerobot` / `import-lerobot`, round trips, camera keys | `feat/c-lerobot-io` | Building | `C-lerobot-io.md` |
+| B | SO-101 as a second bench robot, `--robot` CLI, timing contract | not started | Wave 2 (C++ rebuild) | `B-so101-bench.md` |
+| D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | not started | Wave 2, after C | `D-replay-real.md` |
+| B2 | SO-101 export schema + cameras | not started | Wave 3, after B and C | `B2-so101-export.md` |
+
+## Daniel's TODO(daniel) queue
+These fill in as slices land. Each entry gives file:line and the test that defines "done".
+- (none merged yet)
+
+## Waiting on Daniel (hands-on)
+P3.5 live webcam runs, P3.6 clip, P4.1 live check, P4.2 demos, P5.2 thresholds, P5.3 run, demo video, SO-101 bring-up (P6.1/P6.2 per `docs/learn/P6.md`).
