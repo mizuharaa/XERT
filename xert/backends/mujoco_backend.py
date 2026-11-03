@@ -6,9 +6,11 @@ from .base import JointState
 
 
 class MuJoCoBackend:
-    def __init__(self, spec):
+    def __init__(self, spec, timestep=None):
         self.spec = spec
         self.model = spec.load_model()
+        if timestep is not None:  # replay-real: a dt whose physics steps exactly fill one recorded frame.
+            self.model.opt.timestep = timestep
         self.data = mujoco.MjData(self.model)
         self.qids = np.array([self.model.joint(n).qposadr[0] for n in spec.joint_names])
         self.dids = np.array([self.model.joint(n).dofadr[0] for n in spec.joint_names])

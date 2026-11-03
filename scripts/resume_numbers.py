@@ -18,6 +18,8 @@ XERT_LEDGER_PATH); no number is typed into this file.
    read the row's notes and its slice note before citing one.
 4. Each value prints as stored (Python repr, never rounded or combined), next
    to its backend (mujoco = simulation, so101_hw = hardware), n, ci95 and notes.
+   A row with `reference_backend` (slice D replay-real) prints as a simulation
+   replay against a hardware recording: MuJoCo ran it, the arm only recorded it.
 """
 from datetime import datetime
 import json
@@ -82,8 +84,10 @@ def main():
             label.append(f"train_seeds={row['seeds']['train']}")
         print()
         print("  ".join(label))
+        backend = (f"simulation replay against hardware recording ({row['backend']} vs {row['reference_backend']})"
+                   if "reference_backend" in row else BACKEND[row["backend"]])
         print(f"  value {row['value']!r}  ci95 {row['ci95']!r}  n {row['n']}  "
-              f"backend {BACKEND[row['backend']]}  tree {'DIRTY' if row['git_dirty'] else 'clean'}")
+              f"backend {backend}  tree {'DIRTY' if row['git_dirty'] else 'clean'}")
         print(f"  id {row['id']}")
         print(f"  notes: {row['notes']}")
 
