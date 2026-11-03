@@ -179,7 +179,7 @@ def replay_real(dataset, output, *, ledger=False):
                              *(f"sim_{n}" for n in names)])
             for real, sim, episode, times in traces:
                 for t in range(len(real)):
-                    writer.writerow([episode, t, repr(times[t]), *map(repr, real[t]), *map(repr, sim[t])])
+                    writer.writerow([episode, t, repr(float(times[t])), *map(repr, real[t].tolist()), *map(repr, sim[t].tolist())])
         with (staging / "summary.csv").open("x", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=["episode", "joint", "n", "rmse_rad", "rmse_deg"])
             writer.writeheader()

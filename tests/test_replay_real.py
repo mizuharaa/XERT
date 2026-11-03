@@ -91,7 +91,8 @@ def test_timing_is_an_exact_integer_number_of_physics_steps_per_frame():
 
 
 def test_self_replay_is_zero_per_episode_with_reset_and_artifacts_are_hashed(tmp_path):
-    dataset = write_import(tmp_path / "import", simulate())
+    episodes = simulate()
+    dataset = write_import(tmp_path / "import", episodes)
     result = rr.replay_real(dataset, tmp_path / "replay")
     out = tmp_path / "replay"
     assert result["substeps_per_frame"] == 7 and result["timestep_s"] == 1 / 210
@@ -111,6 +112,11 @@ def test_self_replay_is_zero_per_episode_with_reset_and_artifacts_are_hashed(tmp
     assert {f"plots/{j}.png" for j in SPEC.joint_names} <= set(manifest["artifact_sha256"]) if has_plots \
         else manifest["plots"].startswith("skipped") and not (out / "plots").exists()
     assert {"trace.csv", "summary.csv", "summary.md"} <= set(manifest["artifact_sha256"])
+    with (out / "trace.csv").open(newline="") as stream:
+        trace = list(csv.reader(stream))
+    assert len(trace) == 1 + 40 and all(len(row) == 15 for row in trace)
+    values = np.array([[float(x) for x in row[2:]] for row in trace[1:]])  # Plain floats, not np.float64(...).
+    np.testing.assert_array_equal(values[:, 1:7], np.concatenate([state for state, _ in episodes]))  # Round trip.
     assert read_rows() == []  # No --ledger, no rows.
 
 
