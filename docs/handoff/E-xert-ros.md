@@ -1,6 +1,7 @@
 # Slice E: ROS 2 Jazzy `xert_ros` scaffold
 
-Branch `feat/e-xert-ros`, from `integration/sim-mvp` @ 5cd6853. Not pushed.
+Branch `feat/e-xert-ros`, from `integration/sim-mvp` @ 5cd6853. Pushed by
+integration; CI run 41566786001 (`ROS 2 Jazzy package`) passed at 6fddbdc.
 
 ## What changed and why
 
@@ -51,18 +52,23 @@ Branch `feat/e-xert-ros`, from `integration/sim-mvp` @ 5cd6853. Not pushed.
   in this worktree, so ctest was not run. `package.xml` and the URDF parse
   with `xml.etree`. The RViz YAML was not parsed because no Python here has
   PyYAML.
-- Ubuntu 24.04 + Jazzy (CI or by hand): see `ros/xert_ros/README.md`. The
-  expected result is the gtest (5 tests run, 2 disabled) and the linters
-  passing. **Nothing ROS-side has been compiled or run yet**; the first CI
-  run is the first build.
+- Ubuntu 24.04 + Jazzy, CI run 41566786001 at 6fddbdc (log checked):
+  `colcon build` compiled `xert_node`. `colcon test` gave 6 CTest entries,
+  all passed: `test_xert_node` (5 gtests passed, plus "YOU HAVE 2 DISABLED
+  TESTS", the two TODO(daniel) tests), `cppcheck` (it ran and printed "No
+  problems found", not a skip), `cpplint`, `flake8`, `lint_cmake` and
+  `xmllint`. The later commits on this branch change only comments and docs;
+  CI has not run on them yet.
 
 ## Interview questions
 
 1. *Why is `/joint_states` best effort but `/xert/joint_commands` reliable
-   with depth 1?* A lost state is replaced by a fresher one a period later,
-   so retrying it is wasted work; a lost command matters, but a queue of old
-   ones would replay stale targets after a hiccup, so the topic keeps exactly
-   the newest one and delivers it reliably.
+   with depth 1, when a lost state is replaced 40 ms later?* A command is the
+   last safety-checked setpoint and may be the final one with nothing after
+   it, so losing it leaves the arm on an old target. Keep-last-1 means a
+   retry resends one fresh message, never a backlog. The cost is extra
+   latency only on a loss, and that is safe because commands are aged by
+   `header.stamp` and held once older than 0.2 s.
 2. *Why a position-only `JointState` for commands and not
    `JointTrajectory`?* XERT's safety layer takes one named target per tick,
    and a `JointState` carries the names with the values, while a trajectory
@@ -77,11 +83,11 @@ Branch `feat/e-xert-ros`, from `integration/sim-mvp` @ 5cd6853. Not pushed.
 
 | Where | What | Done means |
 |---|---|---|
-| `ros/xert_ros/include/xert_ros/xert_node.hpp:34` (body `src/xert_node.cpp:54`) | `control_step()` | One `JointState` per tick on `/joint_states`: stamp = now, names in declared order, sizes match, radians. Commands go through the safety limits (`xert/safety`). A stale command (> 0.2 s) holds, then after 0.5 s returns smoothly to rest over 2 s. Never blocks past one period. `DISABLED_ControlLoopPublishesOneStatePerPeriod` passes. |
-| `ros/xert_ros/include/xert_ros/xert_node.hpp:50` (body `src/xert_node.cpp:62`) | `on_command()` | Validates names, sizes and finiteness, reorders into `joint_names` order, and stores the target with its receive time. Never forwards or publishes. A rejected message does not refresh the stale clock. `DISABLED_StaleCommandHoldsPose` passes. |
-| `ros/xert_ros/include/xert_ros/xert_node.hpp:63` (body `src/xert_node.cpp:70`) | `read_state()` | Returns measured state only (sim backend, later `Present_Position`), named in declared order. It never echoes the last command and throws when there is no source. `ReadStateIsNotImplementedYet` is then replaced by a real test. |
+| `ros/xert_ros/include/xert_ros/xert_node.hpp:34` (body `src/xert_node.cpp:54`) | `control_step()` | One `JointState` per tick on `/joint_states`: stamp = now, names in declared order, sizes match, radians. Commands go through the safety limits (`xert/safety`). A command is stale when now() - `header.stamp` > 0.2 s. Then the arm holds, and once now() - the last fresh capture > 0.7 s it returns smoothly to rest over 2 s (defaults at `xert/safety/limits.py:33`). Never blocks past one period. `DISABLED_ControlLoopPublishesOneStatePerPeriod` passes. |
+| `ros/xert_ros/include/xert_ros/xert_node.hpp:52` (body `src/xert_node.cpp:62`) | `on_command()` | Validates names, sizes and finiteness. Rejects a `header.stamp` later than now() or earlier than the last accepted one. Reorders into `joint_names` order and stores the target with `header.stamp` as its capture time (staleness = now() - stamp > 0.2 s, as in `xert/safety/watchdog.py:19-29`). Never forwards or publishes. A rejected message does not refresh the stale clock. `DISABLED_StaleCommandHoldsPose` passes. |
+| `ros/xert_ros/include/xert_ros/xert_node.hpp:70` (body `src/xert_node.cpp:70`) | `read_state()` | Returns measured state only (sim backend, later `Present_Position`), named in declared order. It never echoes the last command and throws when there is no source. `ReadStateIsNotImplementedYet` is then replaced by a real test. |
 | `ros/xert_ros/test/test_xert_node.cpp:96` | `DISABLED_ControlLoopPublishesOneStatePerPeriod` | Write the body as its comment says: at 50 Hz, 50 +/- 2 messages in 1 s, names and sizes as above, stamps about 20 ms apart. Then drop the `DISABLED_` prefix. |
-| `ros/xert_ros/test/test_xert_node.cpp:106` | `DISABLED_StaleCommandHoldsPose` | Write the body as its comment says: hold after 0.2 s of silence; an unknown-name or NaN command is dropped without refreshing the clock. Then drop the prefix. |
+| `ros/xert_ros/test/test_xert_node.cpp:106` | `DISABLED_StaleCommandHoldsPose` | Write the body as its comment says: hold once now() - `header.stamp` of the last accepted command > 0.2 s; an unknown-name, NaN, future-stamped or backwards-stamped command is dropped without refreshing the clock. Then drop the prefix. |
 
 Owner decision (not code): `package.xml:8` licence is "TODO: no project
 licence chosen yet". The repo has no LICENSE. `ament_copyright` stays off
@@ -94,21 +100,14 @@ Kept: cppcheck, cpplint, flake8 (launch file), lint_cmake, xmllint
 run here before CI), copyright (no project licence) and pep257
 (`ament_flake8` already runs flake8-docstrings). `ament_cppcheck` on
 Jazzy skips cppcheck 2.x as too slow (checked in its `main.py`) unless
-`AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` is set, so `ros.yml` sets it. If
-cppcheck turns out noisy or slow in CI, removing that variable turns it back
-into a skip.
+`AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` is set, so `ros.yml` sets it. In run
+41566786001 it ran in 0.17 s with "No problems found".
 
-## Unverified until CI runs
+## Still unverified
 
-- That the C++ compiles against Jazzy rclcpp. It was reviewed statically
-  only; there is no ROS on this PC.
-- That cpplint, cppcheck, flake8, lint_cmake and xmllint pass. They were
-  written to their rules (100-col C++, 99-col Python, single quotes, header
-  guard `XERT_ROS__XERT_NODE_HPP_`, copyright line, `TODO(name):` format)
-  but never run.
-- The graph-based gtest (`AdvertisesStatePublisherAndCommandSubscriber`),
-  which polls up to 2 s for the node's own endpoints.
-- That rosdep resolves every key with `-t buildtool -t build -t build_export
-  -t test`, and the CI time.
-- The launch file and RViz config. CI never starts them (exec deps are not
-  installed). Run `ros2 launch xert_ros xert.launch.py` on a Jazzy machine.
+- The launch file and RViz config. CI never starts them, and its rosdep
+  step skips exec-only deps (rviz2, robot_state_publisher, launch_ros), so
+  rviz2 is not even installed there. Run `ros2 launch xert_ros
+  xert.launch.py` on a Jazzy machine.
+- The control loop itself: the three stubs and the two DISABLED_ tests are
+  Daniel's.
