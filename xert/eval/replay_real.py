@@ -24,7 +24,8 @@ from xert.data.lerobot_io import HARDWARE, ROOT, _fresh, _hashes
 from xle_workbench.storage import atomic_json, sha256
 
 SPEC = ROOT / "xert/spec/so101.yaml"
-# LeRobot writes timestamp = frame_index / fps; anything else means dropped or resampled frames.
+# LeRobot writes timestamp = frame_index / fps, so a mismatch means edited or resampled frames. It cannot detect
+# control-loop overruns: the recorded timestamp is not a measured time.
 TIMESTAMP_TOLERANCE_S = 1e-4
 # Owner decision: the same 1e-6 rad slack as to-store; float32-degree round trips land up to ~1.1e-7 rad past a limit.
 LIMIT_SLACK_RAD = 1e-6
@@ -76,13 +77,12 @@ def replay_timing(fps, asset_timestep):
 
 
 def start_episode(spec, fps, dt, q0):
-    """A new backend and MjData for every episode (review R8): no sim state carries over; qpos = ctrl = q0, qvel 0."""
+    """A new backend and MjData for every episode (review R8): no sim state carries over; qpos = q0, qvel 0."""
     import mujoco
     from xert.backends import MuJoCoBackend
     backend = MuJoCoBackend(replace(spec, control_hz=fps), timestep=dt)  # Checks fps*dt*k == 1 exactly.
     backend.data.qpos[backend.qids] = q0
     backend.data.qvel[:] = 0  # ponytail: recorded velocity is not in the import; the arm is assumed at rest.
-    backend.data.ctrl[backend.actuators] = q0
     mujoco.mj_forward(backend.model, backend.data)
     return backend
 
@@ -169,8 +169,6 @@ def replay_real(dataset, output, *, ledger=False):
         action, excess = within_limits(action, spec.position_limits)
         max_excess = max(max_excess, excess)
         sim, times = run_episode(start_episode(spec, fps, dt, real[0]), action)
-        if not np.allclose(times, np.arange(len(real)) / fps, rtol=0, atol=1e-9):
-            raise RuntimeError("Sim time did not advance exactly 1/fps per frame")
         traces.append((real, sim, int(episode), times))
     summary = []
     for real, sim, episode, _ in traces:
@@ -215,7 +213,7 @@ def replay_real(dataset, output, *, ledger=False):
                     "model_sha256": sha256(spec.model_path), "fps": fps, "timestep_s": dt,
                     "substeps_per_frame": substeps, "asset_timestep_s": asset_dt,
                     "action_limit_slack_rad": LIMIT_SLACK_RAD, "action_max_limit_excess_rad": max_excess,
-                    "timing_rule": "k = ceil(1/(fps*asset_dt)), dt = 1/(fps*k); sim time checked = frame/fps (1e-9 s)",
+                    "timing_rule": "k = ceil(1/(fps*asset_dt)), dt = 1/(fps*k); MuJoCoBackend checks 1/fps per frame (1e-9 s)",
                     "alignment": "sim[0] = state[0]; sim[t+1] after action[t] held 1/fps; RMSE over frames 1..T-1",
                     "reset": "fresh MjData per episode at its recorded first state, qvel 0; nothing carried over",
                     "episodes": [episode for _, _, episode, _ in traces], "plots": plots, "notes": NOTES,
