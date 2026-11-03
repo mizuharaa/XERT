@@ -25,6 +25,9 @@ hardware, no ledger rows written by the builder.
 - **Backends and CLI.** `BenchBackend` picks the arm from the spec name, so `xert calibrate --bench` and
   `xert teleop` select the SO-101 bench with `--spec xert/spec/so101.yaml`. `xle_workbench`
   collect/evaluate/replay take `--robot {xlerobot_left,so101}`.
+- **Deviation from PLAN.md B:** the plan asked for `--robot` on `xert teleop` / `calibrate --bench`. Instead the arm comes
+  from `--spec` (`BenchBackend` uses `spec.name`, `xert/backends/bench.py:16`). Those commands already require
+  `--spec`, and a second selector could disagree with it.
 - **Teleop profile** `configs/teleop/so101_bench.json`: position-only, gains `[0.4, 0.4, 0.3]`.
 - **SO-101 expert** `xle_workbench/so101_expert.py`: TODO(daniel) stubs. SO-101 collect/evaluate refuse with
   `NotImplementedError: SO-101 scripted expert not tuned (TODO(daniel)) ...` before anything is written.
@@ -36,8 +39,9 @@ hardware, no ledger rows written by the builder.
 |---|---|---|
 | Base pose | pos (0.42, 0.04, 0.08) on the table top, quat (0,0,0,1) = yaw pi, so the arm faces -x towards the block area and tray | `scripts/so101_bench_reach.py` |
 | Reach | 14 samples, position-only `xert.retarget.ik.solve` (200 iterations) from the bench reset pose, then FK. Worst FK error **1.84e-16 m** (gate: < 1 mm, the P4.1 tolerance). Samples: the 4 corners of the block-spawn bounds at block centre z 0.096 and +0.06 / +0.075, and the tray at +0.04 / +0.10. | `test_reach_measurement_covers_block_region_and_tray` |
-| Placement choice | Selection probe (scratch, not committed; y 0.03, zero start pose, same samples): base x 0.38 worst 6.8e-3 m (fails); x 0.40 / 0.42 / 0.45 worst <= 3.1e-16 m; x 0.40 with yaw 0 worst 0.178 m. Picked 0.42, between the passing values, and y 0.04, between the block area and the tray. | probe output |
+| Placement margin | `scripts/so101_bench_reach.py --base X 0.04 0.08` (same yaw, reset-pose start). Worst FK error: x 0.36 **2.54e-2 m (fails)**, x 0.38 1.82e-4 m, x 0.40 1.33e-16 m, x 0.45 1.62e-16 m, x 0.50 1.95e-16 m. y 0.04 sits between the block area and the tray. | that command |
 | Timestep | Menagerie 0.005 s, bench **0.002 s** (same as the XLeRobot bench), so 20 substeps = 0.04 s = one 25 Hz period. 0.005 s would also be exact (1/(25*0.005) = 8.0); the plan pins 0.002 s. | `test_so101_bench_step_advances_one_25hz_period` |
+| Contact solver | Kept from Menagerie `so101_xert.xml:2`: iterations 10, ls_iterations 20, impratio 10. The XLeRobot bench uses 100 / 50 / 1. **Contact solver settings differ between the benches.** Recorded as `composition.option`. | `test_scene_composition_leaves_vendored_files_and_records_provenance` |
 | Actuator ctrlrange | Clamped to the joint range, so actions normalized by ctrlrange stay inside `so101.yaml` limits: shoulder_lift ±1.74533 to ±1.7453293, wrist_roll [-2.74385, 2.84121] to [-2.7438473, 2.8412063], gripper upper 1.74533 to 1.7453292 | `test_limits_come_from_the_menagerie_model_and_spec` |
 | Reset pose | [0, -1.5, 1.0, 1.4, 0, 1.4] rad (gripper at the spec's open value). Grasp at (0.251, 0.040, 0.170). No arm-block contact, and joints within 1e-3 rad after 25 held ticks (measured drift 3.9e-4 rad after 50) | `test_reset_holds_still_without_touching_the_block` |
 | Teleop reach | Bench profile, P4.1 method. Image dx <= 0.212, dy <= 0.184, palm scale 0.99 to 1.09, IK error <= 2.0e-14 m, for the seed-0 block, the 4 spawn corners, 6 cm above the block and the tray +4 cm | `test_bench_profile_reaches_block_and_tray_from_modest_hand_motion` |
@@ -82,6 +86,9 @@ The criteria are the XLeRobot expert's own, and each test also runs, and passes,
 - the evaluate default seeds from 10000;
 - 5 mm pre-grasp (PLAN.md).
 
+Note for Daniel: QA found that a naive hover using the existing IK already passes the 5 mm pre-grasp
+test. The two success tests carry the real bar.
+
 Measured XLeRobot reference: hover error worst 4.4 mm on seeds 0..8 at step 65; 9/9 on 0..8; 10/10 on
 10000..10009. Once the stubs exist, CI turns red. A missed criterion shows as a failure; all three
 passing show as XPASS(strict). Then delete the marker.
@@ -96,7 +103,7 @@ passing show as XPASS(strict). Then delete the marker.
    bench, and the recorder checks that every tick advances sim time by exactly 0.04 s.
 3. *How do you know the SO-101 can reach the block and tray?* The existing generalized IK solves 14
    sample targets from the reset pose, FK confirms each one to 1.84e-16 m worst, and the result is
-   recorded in the scene provenance. A base 4 cm closer failed by 6.8 mm.
+   recorded in the scene provenance. `--base 0.36 0.04 0.08` misses by 25 mm, so the margin is measured.
 
 ## README lines for integration to add
 
@@ -112,6 +119,16 @@ passing show as XPASS(strict). Then delete the marker.
   gate. Daniel's expert may want the base moved, which changes `SO101_BASE` and the provenance.
 - The reset pose is a scaffolding choice, not a tuned value. Calibration neutral = this pose.
 - B2 owns cameras and the exporter: `CameraRenderer` and `export-lerobot` still accept XLeRobot only.
-- The XLeRobot `config` now stores `"robot": "xlerobot_left"`, and `implementation_sha256` changed as any
-  core edit does, so episodes recorded before this branch fail the replay contract check (as before
-  for any core change).
+- Pin the SO-101 contact solver to the XLeRobot bench's iterations 100 / ls_iterations 50 / impratio 1, or keep
+  Menagerie's 10 / 20 / 10? Not changed; Daniel decides.
+
+## Migration
+
+- `implementation_sha256` is 473fff47 at 5cd6853, b986c806 at b0abc9b (QA), and 07f21e5d at HEAD (comments only since).
+  The change is source-only. QA replayed 18 episodes across the hash change (p1.2 recovery_integrated,
+  p1.3 act_v1, p0.2 scripted) with max difference 0.0, and the 16-seed equivalence is 0.0.
+- The contract hash includes `implementation_sha256`. So episodes and models from p1.2/recovery_integrated,
+  p1.3, p1.4 and p2.1 now fail `replay` / `load_verified_policy` on this core. Those results reproduce at
+  their recorded `git_commit`.
+- Training on old episodes and the P5.3 gate experiment are unaffected.
+- XLeRobot configs now store `"robot": "xlerobot_left"`.
