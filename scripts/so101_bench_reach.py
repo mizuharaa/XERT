@@ -1,11 +1,13 @@
 """Measure that the SO-101 bench placement reaches the block-spawn region and the tray.
 
-Run from the checkout: .venv/Scripts/python.exe scripts/so101_bench_reach.py
+Run from the checkout: .venv/Scripts/python.exe scripts/so101_bench_reach.py [--base X Y Z]
+--base re-measures another base position (same yaw) without changing the bench; the default is SO101_BASE.
 Position-only generalized IK (xert.retarget.ik.solve, no new solver math) from the bench reset pose, then FK.
 Samples: the four corners of the default block-spawn bounds at the block centre and 6 / 7.5 cm above it,
 and the tray at 4 / 10 cm above its body origin (the heights the XLeRobot expert uses).
 Exits non-zero unless every FK error is below 1 mm (the P4.1 bench-profile IK tolerance).
 """
+import argparse
 import itertools
 import json
 from pathlib import Path
@@ -18,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from xert.retarget.ik import solve
 from xert.spec import load_spec
+from xle_workbench import sim
 from xle_workbench.sim import ManipulationEnv
 
 TOLERANCE = 1e-3
@@ -47,6 +50,10 @@ def reach_report():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", type=float, nargs=3, metavar=("X", "Y", "Z"))
+    if (base := parser.parse_args().base) is not None:
+        sim.SO101_BASE = {**sim.SO101_BASE, "pos": base}  # This process only; the bench constant is unchanged.
     report = reach_report()
     print(json.dumps(report, indent=2))
     raise SystemExit(0 if report["worst_fk_error_m"] < TOLERANCE else 1)
