@@ -13,11 +13,11 @@ Nothing renames a key between recording, training and rollout.
 | --- | --- | --- |
 | Hardware recording | `lerobot/robots/so_follower/so_follower.py:70-76` turns each `config.cameras` key into an observation feature. `lerobot/utils/feature_utils.py:94` builds the key as the literal `f"{prefix}.images.{key}"`, not through the `OBS_IMAGES` constant (`lerobot/utils/constants.py:25`), which spells the same string. A depth-enabled camera adds a second feature `<key>_depth` (`so_follower.py:75-76`), so it becomes `observation.images.<key>_depth`. | `observation.images.<config key>` (and `<config key>_depth`) |
 | Hardware rollout | `lerobot/utils/feature_utils.py:134` (`build_dataset_frame`) removes the same prefix to find the camera by its config key. | same |
-| Sim cameras | `xert/data/cameras.py:23-38` (`CAMERAS`, one entry per bench robot), written at `:125` and `:191` | `observation.images.scene`, `observation.images.wrist` |
+| Sim cameras | `xert/data/cameras.py:23-37` (`CAMERAS`, one entry per bench robot), written at `:133` and `:199` | `observation.images.scene`, `observation.images.wrist` |
 | Sim export | `xert export-lerobot --cameras` runs `render-cameras` on the P2.1 export, so it has the same keys | `observation.images.scene`, `observation.images.wrist` |
 | Runtime recorder | `xert/data/recorder.py:38-60` (`_features`) | none: the recorder never records images |
 | Official ACT reference (P1.4) | `xert/eval/lerobot_act.py:24-27` (`policy_config`) | none: state and environment state only |
-| Image ACT smoke test | `tests/test_cameras.py:151` selects keys that start with `observation.images.` | whatever the dataset has |
+| Image ACT smoke test | `tests/test_cameras.py:160` selects keys that start with `observation.images.` | whatever the dataset has |
 | Import | `xert import-lerobot` does not convert images. They stay in the bit-exact `raw/` copy and are listed in `import.json` `not_imported`. | n/a |
 
 ## What the test checks
@@ -33,4 +33,8 @@ Nothing renames a key between recording, training and rollout.
 
 - **No key conflict.** Where keys exist, they follow the rule. No existing key was renamed.
 - **Gap:** the official ACT reference (`lerobot_act.py:24-27`) and the recorder use no cameras. Image training exists only as the one-step smoke test in `tests/test_cameras.py`.
-- **Open (owner decision):** a policy trained on sim `scene`/`wrist` can read real data only if the hardware camera config uses the same keys. A config such as `front` would need a rename at training time, and the rule above forbids that. The hardware camera config keys are not chosen yet. Slice B2 added the simulated SO-101 `scene`/`wrist` cameras; their poses are placed by eye and are not the real SO-101 camera mount or lens.
+- **Decided (owner, 2026-11-03):** the real SO-101 cameras use the same config keys as sim, `scene` (fixed view of the block and tray) and `wrist` (gripper-mounted).
+  - With LeRobot that means the `--robot.cameras` dict keys are `scene` and `wrist`, so recordings carry `observation.images.scene` and `observation.images.wrist`.
+  - A policy trained on sim renders then reads real data with no rename.
+  - Any other key (e.g. `front`) breaks this rule; re-record or re-import instead of renaming at training time.
+- **SO-101 sim cameras (slice B2):** `scene` is placed by eye in simulation; `wrist` is Menagerie's own `wrist_cam` (on `camera_mount`, fovy 61), plausibly the 32×32 UVC wrist mount. Neither pose nor fovy is measured on Daniel's arm; measure the real lens FOV before any sim-to-real claim.

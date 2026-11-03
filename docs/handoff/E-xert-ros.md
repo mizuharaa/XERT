@@ -89,9 +89,9 @@ integration; CI run 41566786001 (`ROS 2 Jazzy package`) passed at 6fddbdc.
 | `ros/xert_ros/test/test_xert_node.cpp:96` | `DISABLED_ControlLoopPublishesOneStatePerPeriod` | Write the body as its comment says: at 50 Hz, 50 +/- 2 messages in 1 s, names and sizes as above, stamps about 20 ms apart. Then drop the `DISABLED_` prefix. |
 | `ros/xert_ros/test/test_xert_node.cpp:106` | `DISABLED_StaleCommandHoldsPose` | Write the body as its comment says: hold once now() - `header.stamp` of the last accepted command > 0.2 s; an unknown-name, NaN, future-stamped or backwards-stamped command is dropped without refreshing the clock. Then drop the prefix. |
 
-Owner decision (not code): `package.xml:8` licence is "TODO: no project
-licence chosen yet". The repo has no LICENSE. `ament_copyright` stays off
-until there is one.
+Licence (decided 2026-11-03): the project is Apache-2.0 (`LICENSE` at the repo root),
+and `package.xml:8` now says `Apache-2.0`. `ament_copyright` is still off: enabling it
+would require copyright headers in every source file, which is a separate change.
 
 ## Linters
 

@@ -10,8 +10,8 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | E | ROS 2 Jazzy `xert_ros` scaffold, URDF, RViz, launch, QoS README | `feat/e-xert-ros` | Merged; CI builds and tests on Jazzy | [E-xert-ros.md](E-xert-ros.md) |
 | C | `xert export-lerobot` / `import-lerobot` / `to-store`, round trips, camera keys | `feat/c-lerobot-io` | Merged | [C-lerobot-io.md](C-lerobot-io.md), [CAMERA_KEYS](../CAMERA_KEYS.md) |
 | B | SO-101 as a second bench robot, `--robot` CLI, timing contract | `feat/b-so101-bench` | Merged | [B-so101-bench.md](B-so101-bench.md) |
-| D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | `feat/d-replay-real` | Built, in QA | `D-replay-real.md` |
-| B2 | SO-101 export schema + cameras | not started | Next (B and C merged) | `B2-so101-export.md` |
+| D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | `feat/d-replay-real` | Merged | [D-replay-real.md](D-replay-real.md) |
+| B2 | SO-101 export schema + cameras | `feat/b2-so101-export` | Building | `B2-so101-export.md` |
 
 ## Daniel's TODO(daniel) queue
 These fill in as slices land. Each entry gives file:line and the test that defines "done".
@@ -22,15 +22,31 @@ These fill in as slices land. Each entry gives file:line and the test that defin
   - `so101_expert_targets()` at :11 (waypoints) and `so101_expert_action()` at :30 (IK targets, gains, rate limits).
   - Done = the three strict xfails in `tests/test_so101_expert.py` (:43 pre-grasp within 5 mm, :54 success on seeds 0..8, :62 held-out success) pass with their markers removed.
   - The 5 mm pre-grasp test is weak: a naive hover passes it. The success tests are the real bar.
-- **Owner decisions from B:**
-  - The SO-101 bench uses Menagerie's contact solver settings (iterations 10, ls_iterations 20, impratio 10; XLeRobot bench 100/50/1). Pin them to the XLeRobot values or keep Menagerie's?
-  - The base placement (`SO101_BASE`) was chosen for position reach only; a top-down grasp approach was not measured.
+- **D, actuator parameter fitting** (system identification): `fit_actuator_params()` at `xert/eval/replay_real.py:269`.
+  - Done = the strict xfail at `tests/test_replay_real.py:221` passes with its marker removed: on a kp×0.5 synthetic recording, held-out RMSE < 0.1 × baseline and fitted kp within 10% of 499.11.
+  - Results and any fit are tied to the replay dt (QA measured 0.0016–0.0118 rad RMSE between runs that differ only in timestep).
+- **Notes from B:**
+  - The base placement (`SO101_BASE`) was chosen for position reach only; a top-down grasp approach was not measured. Move it if your expert needs to.
   - Migration: core edits change `implementation_sha256`, so P1.2–P2.1 stored episodes and models refuse replay/load on the new core and reproduce at their recorded `git_commit` (see the B handoff).
-- **Owner decisions from C:**
-  - Name the real arm's cameras `scene`/`wrist`, the same as sim, so one policy reads both without renaming?
-  - Should `to-store` append the block/tray `environment_state` to observations?
-  - Importing real recordings assumes LeRobot's `use_degrees=True`; pass `--motor-units degrees` to assert it.
-- **Owner decision:** pick a project licence. The repo has no LICENSE, and `ros/xert_ros/package.xml` says "TODO".
+
+## Owner decisions (2026-11-03: Daniel accepted every recommended default)
+| # | Decision | Applied as | Where |
+| --- | --- | --- | --- |
+| 1 | Project licence | Apache-2.0 (same as the vendored SO-101 and Menagerie assets) | `LICENSE`, `ros/xert_ros/package.xml` |
+| 2 | Real camera names | `scene` and `wrist`, identical to sim | `docs/CAMERA_KEYS.md` |
+| 3 | Block/tray state in `to-store` | Appended to observations when the import has `environment_state` | slice D fix round |
+| 4 | SO-101 contact solver settings | Keep Menagerie's (10/20/10), tuned with that model | B scene provenance |
+| 5 | Trust for `replay-real --ledger` | Record the LeRobot calibration file sha256 and robot id at import; ledger rows require it | slice D fix round |
+| 6 | Replay start velocity | Assume rest, but flag episodes whose first frames are already moving | slice D fix round |
+| - | Joint-limit tolerance in replay | 1e-6 rad, the same as import | slice D fix round |
+
+Already defaulted earlier and unchanged:
+- P5.3 pooled non-overlap rule and C redrawn per seed
+- teleop Esc saves the episode, then quits
+- lossless PNG images
+- `--spec` selects the teleop arm
+- earlier agent-written CORE code is kept as tutoring material
+- `--motor-units degrees` asserts LeRobot's `use_degrees=True`
 
 ## Waiting on Daniel (hands-on)
 P3.5 live webcam runs, P3.6 clip, P4.1 live check, P4.2 demos, P5.2 thresholds, P5.3 run, demo video, SO-101 bring-up (P6.1/P6.2 per `docs/learn/P6.md`).
