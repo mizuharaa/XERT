@@ -16,6 +16,8 @@ JOINTS = ["Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L", "
 CONTROL_HZ = 25
 # Bench arms: actuator i drives joints[i]. Physics substeps per control step are derived in the
 # native core as 1/(CONTROL_HZ * timestep) and refused unless that is an exact integer.
+# xlerobot_left must match cpp/src/env.cpp xlerobot_left(): that C++ default serves the four-argument
+# Env callers (reach_trials, reach_tests, the old pybind call); this copy is what Python passes explicitly.
 ROBOTS = {
     "xlerobot_left": {"joints": JOINTS, "grasp_site": "grasp", "reset_pose": [0, 1.0, 1.2, -.6, 0, 1.0],
                       "scripted_expert": True},
@@ -125,6 +127,10 @@ def so101_scene():
                   "robot_xml_sha256": hashlib.sha256(robot_xml.read_bytes()).hexdigest(),
                   "composition": {"props": "light, floor, table, tray and block from the XLeRobot bench model_xml()",
                                   "base": SO101_BASE, "timestep": {"menagerie": menagerie_timestep, "bench": SO101_TIMESTEP},
+                                  # Contact solver settings are Menagerie's, not the XLeRobot bench's (100 / 50 / 1).
+                                  "option": {"timestep": model.opt.timestep, "iterations": int(model.opt.iterations),
+                                             "ls_iterations": int(model.opt.ls_iterations),
+                                             "impratio": model.opt.impratio},
                                   "ctrlrange_clamped_to_joint_range": clamped,
                                   "reach_evidence": "scripts/so101_bench_reach.py; docs/handoff/B-so101-bench.md"}}
     return model, spec.to_xml(), provenance

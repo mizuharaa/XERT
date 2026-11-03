@@ -74,6 +74,8 @@ def test_scene_composition_leaves_vendored_files_and_records_provenance():
     composition = env.metadata()["source"]["composition"]
     assert composition["timestep"] == {"menagerie": .005, "bench": .002} and env.model.opt.timestep == .002
     assert composition["base"] == {"pos": [.42, .04, .08], "quat": [0, 0, 0, 1]}
+    # Menagerie's contact solver settings, disclosed because they differ from the XLeRobot bench (100 / 50 / 1).
+    assert composition["option"] == {"timestep": .002, "iterations": 10, "ls_iterations": 20, "impratio": 10}
     np.testing.assert_array_equal(env.model.body("base").pos, [.42, .04, .08])
     assert env.metadata()["source"]["robot_xml_sha256"] == before[SO101_ASSETS / "so101_xert.xml"]
     # Block, tray and table are the XLeRobot bench's own bodies, at the same world poses.
