@@ -83,9 +83,9 @@ fixture update step (the smoke-test shape) are injected with monkeypatch.
 
 | Gate | Before (c7e2ca1) | After |
 |---|---|---|
-| base pytest | 192 passed, 49 skipped, 5 xfailed, 8 subtests | 192 passed, 50 skipped, 5 xfailed, 8 subtests |
-| `.venv-lerobot`: test_cameras + test_lerobot_act (+ test_image_act) | 12 passed | 18 passed, 2 xfailed |
-| combined `venv-teleop`, same list | 12 passed | 18 passed, 2 xfailed |
+| base pytest | 192 passed, 49 skipped, 5 xfailed, 8 subtests | 194 passed, 61 skipped, 5 xfailed, 8 subtests (after the fix round) |
+| `.venv-lerobot`: test_cameras + test_lerobot_act (+ test_image_act) | 12 passed | first round: 18 passed, 2 xfailed. Fix round: full file **not re-run** (killed by low memory) |
+| combined `venv-teleop`, same list | 12 passed | first round: 18 passed, 2 xfailed. Not re-run after the fix round |
 
 ## TODO(daniel)
 
