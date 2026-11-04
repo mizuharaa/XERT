@@ -223,6 +223,12 @@ a measurement yet. The task list and each slice's handoff are in
   - Results are tied to the replay timestep.
   - Ledger rows need the calibration hash and robot id, and they are labelled
     "simulation replay against hardware recording".
+- **Joint map from calibration (slice F1).** `python -m xert map-from-calibration
+  --calibration <robots/so_follower/<id>.json> --poses poses.json --output <fresh>`
+  fills the SO-101 joint map's kinematic fields (sign, scale, zero offset,
+  limits) from the LeRobot calibration file and at least two still-pose
+  recordings with asserted sim angles. It reads files only and never opens the
+  bus. `max_speed`/`max_accel` stay `TBD` for the owner to choose.
 - **Hardware backend (P6 prep).** `python -m xert hw-dry-run` prints motor
   targets and never opens the bus. See [docs/learn/P6.md](docs/learn/P6.md) for
   the bring-up order and the P6.2 blockers.
