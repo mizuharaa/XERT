@@ -209,3 +209,30 @@ def test_recorder_and_latency_refuse_commanded_state(tmp_path):
     assert any(r["latency_sample"] for r in records) and all(r["state_measured"] is False for r in records)
     with pytest.raises(ValueError, match="measured state"):
         summarize(records, require_webcam=False)
+
+
+def test_kinematic_tier_accepts_tbd_speed_but_motion_needs_all_seven(tmp_path):
+    raw = json.loads(fixture_map(tmp_path).read_text())
+    raw["joints"][-1].update(sign=1, zero_offset=0.0, min=0.0, max=100.0)
+    for entry in raw["joints"]:
+        entry.update(max_speed=TBD, max_accel=TBD)  # The F1 tool leaves these to Daniel.
+    contents = json.dumps(raw)
+    entries = load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=contents, require="kinematic")
+    assert [e["max_speed"] for e in entries] == [TBD] * 6
+    with pytest.raises(ValueError, match="max_accel.*max_speed.*for motion"):
+        load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=contents)  # Default tier is motion.
+    assert load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=contents) == [None] * 6  # Dry-run unchanged.
+    raw["joints"][0]["zero_offset"] = TBD
+    with pytest.raises(ValueError, match="shoulder_pan.*zero_offset.*for kinematic"):
+        load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw), require="kinematic")
+
+
+def test_assumed_fields_are_refused_like_tbd(tmp_path):
+    raw = json.loads(fixture_map(tmp_path).read_text())
+    raw["joints"][-1].update(sign=1, zero_offset=0.0, min=0.0, max=100.0)
+    assert all(load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw)))
+    raw["provenance"] = {"assumed": {"elbow_flex": ["sign", "units_per_rad"]}}
+    for require in ("kinematic", "motion"):
+        with pytest.raises(ValueError, match="elbow_flex.*assumed.*sign"):
+            load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw), require=require)
+    assert load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=json.dumps(raw))[2] is None

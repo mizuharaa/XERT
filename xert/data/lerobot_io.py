@@ -154,7 +154,8 @@ def _hardware(raw, info, joint_map, raw_units, motor_units):
     if motor_units != "degrees":
         raise ValueError("Radians need an explicit --motor-units degrees: LeRobot 0.6.1 does not record use_degrees")
     map_bytes = Path(joint_map).read_bytes()
-    entries = load_joint_map(joint_map, spec, dry_run=False, contents=map_bytes)  # Any TBD joint is refused here.
+    # Conversion needs the kinematic tier only; any TBD or assumed kinematic field is refused here.
+    entries = load_joint_map(joint_map, spec, dry_run=False, contents=map_bytes, require="kinematic")
     if [e["units"] for e in entries] != ["degrees"] * 5 + ["range_0_100"]:
         raise ValueError("Joint map units must be degrees for the body joints and range_0_100 for the gripper")
     sign = np.array([e["sign"] for e in entries], dtype=np.float64)
