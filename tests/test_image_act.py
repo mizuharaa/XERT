@@ -72,16 +72,42 @@ def clean_tree(patch):
     patch.setattr(ledger, "source_provenance", lambda: provenance)
 
 
-@pytest.fixture(scope="module")
-def checkpoint(rendered, tmp_path_factory):
+def fixture_train(rendered, output, select=lambda history: (history[-1]["epoch"], False), epochs=2):
     import torch
     with pytest.MonkeyPatch.context() as patch:
         clean_tree(patch)
-        patch.setattr(image_act, "image_act_settings", fixture_settings)
+        patch.setattr(image_act, "image_act_settings", lambda meta: {**fixture_settings(meta), "epochs": epochs})
         patch.setattr(image_act, "make_optimizer", lambda policy: torch.optim.AdamW(policy.parameters(), lr=1e-4))
         patch.setattr(image_act, "training_step", fixture_step)
-        patch.setattr(image_act, "select_epoch", lambda history: (history[-1]["epoch"], False))
-        return image_act.train([rendered[1]], tmp_path_factory.mktemp("ckpt") / "model", seed=0)
+        patch.setattr(image_act, "select_epoch", select)
+        return image_act.train([rendered[1]], output, seed=0)
+
+
+@pytest.fixture(scope="module")
+def checkpoint(rendered, tmp_path_factory):
+    return fixture_train(rendered, tmp_path_factory.mktemp("ckpt") / "model")
+
+
+def test_only_the_selected_epoch_is_ever_on_disk(rendered, tmp_path):
+    output, seen = tmp_path / "model", []
+
+    def select(history):  # Keeps epoch 2 through epoch 3; records what is on disk at each call.
+        kept = output / "epochs"
+        seen.append((sorted(p.name for p in kept.iterdir()) if kept.exists() else [],
+                     (kept / "selected/model.safetensors").read_bytes() if len(history) == 3 else None))
+        return min(len(history), 2), False
+
+    fixture_train(rendered, output, select, epochs=3)
+    assert [names for names, _ in seen] == [[], ["selected"], ["selected"]]
+    assert (output / "model.safetensors").read_bytes() == seen[2][1]  # Epoch 2's weights, not epoch 3's.
+    assert json.loads((output / image_act.METADATA).read_text())["selected_epoch"] == 2
+    assert not (output / "epochs").exists()
+
+
+def test_a_selection_that_is_neither_newest_nor_kept_is_refused_and_cleaned(rendered, tmp_path):
+    with pytest.raises(ValueError, match="only the newest epoch or the previous pick"):
+        fixture_train(rendered, tmp_path / "model", lambda history: (0, False), epochs=1)
+    assert not (tmp_path / "model/epochs").exists()
 
 
 def test_refuses_a_dataset_without_both_camera_images(rendered, tmp_path):

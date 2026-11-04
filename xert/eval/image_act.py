@@ -79,8 +79,9 @@ def select_epoch(history):
     Input: history = [{"epoch": k, "train_loss": mean training_step loss, "validation_l1": mean |predicted -
     target| normalized action over valid chunk positions with ACT's prior (no VAE encoder), or None without
     validation episodes}], one entry per finished epoch, in order.
-    Output: (selected_epoch, stop). selected_epoch must be an epoch in history; stop=True ends training early.
-    The checkpoint keeps the epoch selected by the last call.
+    Output: (selected_epoch, stop). selected_epoch must be the newest epoch (its weights replace the kept ones)
+    or the previous pick (the kept weights stay); anything else is refused, because only one epoch's weights are
+    ever on disk (the P1.4 keep-best pattern). stop=True ends training early. The checkpoint is the last pick.
     """
     raise NotImplementedError("image-ACT selection rule not chosen (TODO(daniel))")
 
@@ -255,33 +256,40 @@ def train(paths, output, seed=0):
     optimizer = make_optimizer(policy)
     keys = [*config.input_features, "action", "action_is_pad"]
     output.mkdir(parents=True)
-    history, selected = [], None
-    for epoch in range(1, settings["epochs"] + 1):
-        policy.train()
-        losses = [training_step(policy, preprocessor({key: batch[key] for key in keys}), optimizer)
-                  for batch in training]
-        error = count = 0
-        if checking:
-            policy.eval()
-            with torch.inference_mode():
-                for batch in checking:
-                    batch = preprocessor({key: batch[key] for key in keys})
-                    prediction = policy.predict_action_chunk({key: batch[key] for key in config.input_features})
-                    valid = ~batch["action_is_pad"]
-                    error += ((prediction - batch["action"]).abs() * valid.unsqueeze(-1)).sum().item()
-                    count += valid.sum().item() * prediction.shape[-1]
-        history.append({"epoch": epoch, "train_loss": float(np.mean(losses)),
-                        "validation_l1": error / count if count else None})
-        if not all(math.isfinite(v) for v in history[-1].values() if v is not None):
-            raise ValueError(f"Nonfinite training history: {history[-1]}")
-        print(json.dumps({"phase": "training", "seed": seed, **history[-1]}), flush=True)
-        policy.save_pretrained(output / "epochs" / str(epoch))
-        selected, stop = select_epoch(history)
-        if stop:
-            break
-    if selected not in [row["epoch"] for row in history]:
-        raise ValueError(f"select_epoch chose {selected}, not a finished epoch")
-    shutil.copytree(output / "epochs" / str(selected), output, dirs_exist_ok=True)
+    history, selected, kept = [], None, output / "epochs" / "selected"
+    try:
+        for epoch in range(1, settings["epochs"] + 1):
+            policy.train()
+            losses = [training_step(policy, preprocessor({key: batch[key] for key in keys}), optimizer)
+                      for batch in training]
+            error = count = 0
+            if checking:
+                policy.eval()
+                with torch.inference_mode():
+                    for batch in checking:
+                        batch = preprocessor({key: batch[key] for key in keys})
+                        prediction = policy.predict_action_chunk({key: batch[key] for key in config.input_features})
+                        valid = ~batch["action_is_pad"]
+                        error += ((prediction - batch["action"]).abs() * valid.unsqueeze(-1)).sum().item()
+                        count += valid.sum().item() * prediction.shape[-1]
+            history.append({"epoch": epoch, "train_loss": float(np.mean(losses)),
+                            "validation_l1": error / count if count else None})
+            if not all(math.isfinite(v) for v in history[-1].values() if v is not None):
+                raise ValueError(f"Nonfinite training history: {history[-1]}")
+            print(json.dumps({"phase": "training", "seed": seed, **history[-1]}), flush=True)
+            choice, stop = select_epoch(history)
+            if choice == epoch:
+                policy.save_pretrained(kept)  # Overwrites the one kept epoch (P1.4 keep-best).
+            elif choice is None or choice != selected:
+                raise ValueError(f"select_epoch chose {choice} after epoch {epoch}; only the newest epoch or the "
+                                 f"previous pick ({selected}) can be kept")
+            selected = choice
+            if stop:
+                break
+    except BaseException:
+        shutil.rmtree(output / "epochs", ignore_errors=True)  # A failed run keeps its output, not stray weights.
+        raise
+    shutil.copytree(kept, output, dirs_exist_ok=True)
     shutil.rmtree(output / "epochs")
     preprocessor.save_pretrained(output)
     postprocessor.save_pretrained(output)
