@@ -28,13 +28,11 @@ class CommandedState(JointState):
 
 
 def load_joint_map(path, spec, *, dry_run, contents=None, require="motion"):
-    """Return one dict per spec joint, or None where any measured value is TBD or assumed (dry-run only).
+    """Return one dict per spec joint, or None where any measured value is TBD (dry-run only).
 
-    Outside dry-run every field of the `require` tier must be measured: neither TBD nor listed in the map's
-    `provenance.assumed` {joint: [fields]} (written by `xert map-from-calibration`).
+    Outside dry-run every field of the `require` tier must be measured (not TBD).
     """
     raw = json.loads(Path(path).read_bytes() if contents is None else contents)
-    assumed = ((raw.get("provenance") or {}).get("assumed") or {}) if isinstance(raw, dict) else {}
     joints = raw.get("joints") if isinstance(raw, dict) else None
     if not isinstance(joints, list) or [j.get("joint") if isinstance(j, dict) else None for j in joints] != list(spec.joint_names):
         raise ValueError("Joint map needs one entry per spec joint, in spec order")
@@ -47,13 +45,12 @@ def load_joint_map(path, spec, *, dry_run, contents=None, require="motion"):
         if entry["units"] not in UNITS:
             raise ValueError(f"{entry['joint']}: units must be a LeRobot 0.6.1 MotorNormMode value {UNITS}")
         tbd = [k for k in MEASURED if entry[k] == TBD]
-        unmeasured = set(tbd) | set(assumed.get(entry["joint"], ()))
-        if unmeasured and dry_run:
+        if tbd and dry_run:
             mapped.append(None)  # Never guessed: an unmeasured joint stays unmapped.
             continue
-        if unmeasured & set(TIERS[require]):
-            raise ValueError(f"{entry['joint']}: TBD or assumed joint-map values {sorted(unmeasured)} are refused "
-                             f"outside dry-run for {require}; measure them (P6.1)")
+        if set(tbd) & set(TIERS[require]):
+            raise ValueError(f"{entry['joint']}: TBD joint-map values {tbd} are refused outside dry-run for "
+                             f"{require}; measure them (P6.1)")
         present = [k for k in MEASURED if k not in tbd]
         if any(type(entry[k]) not in (int, float) or not np.isfinite(entry[k]) for k in present):
             raise ValueError(f"{entry['joint']}: measured values must be finite numbers or {TBD!r}")
