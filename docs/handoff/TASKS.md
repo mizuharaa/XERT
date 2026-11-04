@@ -13,6 +13,8 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | `feat/d-replay-real` | Merged | [D-replay-real.md](D-replay-real.md) |
 | B2 | SO-101 export schema + cameras (wrist = Menagerie `wrist_cam`) | `feat/b2-so101-export` | Merged | [B2-so101-export.md](B2-so101-export.md) |
 | F1 | `xert map-from-calibration`: fills the SO-101 joint map from a LeRobot calibration + ≥2 still-pose recordings (files only) | `feat/f1-map-from-calibration` | Merged | [F1-map-from-calibration.md](F1-map-from-calibration.md) |
+| env | Real-arm environment: LeRobot `[feetech]` extra (STS3215 SDK, pyserial, deepdiff) in the teleop locks; `python -m scripts.hw_env_check` readiness report | on integration | Done 2026-11-04; teleop CI job green with the new lock | README "Python environments" |
+| G1 | Image-ACT train/evaluate scaffold on rendered `scene`/`wrist` (settings, loss and selection are TODO(daniel)) | `feat/g1-image-act` | Building | `G1-image-act.md` |
 
 ## Daniel's TODO(daniel) queue
 These fill in as slices land. Each entry gives file:line and the test that defines "done".
