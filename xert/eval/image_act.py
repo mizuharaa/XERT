@@ -383,7 +383,15 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
     if CAMERAS[metadata["robot"]] != metadata["camera"]["cameras"]:
         raise ValueError("CAMERAS changed since training; live renders would differ from the training images")
     reason = _ledger_reason(metadata["source_kinds"], len(seeds))
-    provenance = ledger.source_provenance()
+    provenance, checkpoint_sha256 = ledger.source_provenance(), sha256(checkpoint / METADATA)
+    if reason is None:  # Rows only (as in P5.3); a report on a dirty tree stays allowed.
+        if provenance["git_dirty"] or metadata["git_dirty"]:
+            raise ValueError("Repository or checkpoint has uncommitted changes; commit them so every row names "
+                             "the exact source")
+        if any(row["experiment"] == experiment and row.get("checkpoint_sha256") == checkpoint_sha256
+               for row in ledger.read_rows()):
+            raise ValueError(f"Ledger already has {experiment} rows for this checkpoint; re-running it on new seeds "
+                             "is seed-shopping, so choose a new experiment tag")
     policy = ACTPolicy.from_pretrained(checkpoint, local_files_only=True)
     policy.eval()
     preprocessor, postprocessor = make_pre_post_processors(policy.config, pretrained_path=str(checkpoint))
@@ -415,7 +423,7 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
                              embodiment=metadata["robot"], metric="success_rate", value=report["success_rate"],
                              ci95=report["ci95"], n=len(trials), seeds={"train": [metadata["seed"]], "eval": list(seeds)},
                              config_path=ledger.artifact_path(checkpoint / METADATA), source_kinds=metadata["source_kinds"],
-                             dataset_sha256=metadata["dataset_sha256"],
+                             dataset_sha256=metadata["dataset_sha256"], checkpoint_sha256=checkpoint_sha256,
                              notes="Official LeRobot ACT on rendered scene + wrist images and bench state, rolled "
                                    "out on held-out MuJoCo seeds with live renders. Simulation only; no hardware claim.")
         report["ledger_row"] = row["id"]

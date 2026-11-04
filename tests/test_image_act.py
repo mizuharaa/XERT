@@ -66,10 +66,17 @@ def fixture_step(policy, batch, optimizer):
     return loss.item()
 
 
+def clean_tree(patch):
+    """Rows refuse a dirty tree; tests run on a working copy, so they declare it clean (temporary ledger only)."""
+    provenance = {**ledger.source_provenance(), "git_dirty": False}
+    patch.setattr(ledger, "source_provenance", lambda: provenance)
+
+
 @pytest.fixture(scope="module")
 def checkpoint(rendered, tmp_path_factory):
     import torch
     with pytest.MonkeyPatch.context() as patch:
+        clean_tree(patch)
         patch.setattr(image_act, "image_act_settings", fixture_settings)
         patch.setattr(image_act, "make_optimizer", lambda policy: torch.optim.AdamW(policy.parameters(), lr=1e-4))
         patch.setattr(image_act, "training_step", fixture_step)
@@ -155,11 +162,32 @@ def test_human_data_on_enough_seeds_writes_one_row(checkpoint, tmp_path, monkeyp
     # Harness path only: scripted data is relabelled human and the seed bar lowered, in a temporary ledger.
     monkeypatch.setattr(image_act, "HUMAN_SOURCES", ("scripted",))
     monkeypatch.setattr(image_act, "MIN_EVAL_EPISODES", 1)
+    clean_tree(monkeypatch)
     report = image_act.evaluate(checkpoint, EVAL_SEEDS[:1], tmp_path / "report.json")
     [row] = ledger.read_rows()
     assert row["id"] == report["ledger_row"] and row["slice"] == "G1" and row["experiment"] == "image_act_v1"
     assert row["metric"] == "success_rate" and row["n"] == 1 and row["seeds"] == {"train": [0], "eval": EVAL_SEEDS[:1]}
     assert any(path.endswith("report.json") for path in row["artifact_sha256"])
+    # The same checkpoint under the same tag again, even on other seeds, is seed-shopping.
+    with pytest.raises(ValueError, match="already has image_act_v1 rows for this checkpoint"):
+        image_act.evaluate(checkpoint, EVAL_SEEDS[1:], tmp_path / "again.json")
+    assert not (tmp_path / "again.json").exists() and len(ledger.read_rows()) == 1
+
+
+@pytest.mark.parametrize("dirty", ["tree", "checkpoint"])
+def test_rows_refuse_a_dirty_tree_or_checkpoint_before_any_rollout(checkpoint, tmp_path, monkeypatch, dirty):
+    monkeypatch.setattr(image_act, "HUMAN_SOURCES", ("scripted",))
+    monkeypatch.setattr(image_act, "MIN_EVAL_EPISODES", 1)
+    clean_tree(monkeypatch)
+    metadata = json.loads((checkpoint / image_act.METADATA).read_text())
+    if dirty == "tree":
+        monkeypatch.setattr(ledger, "source_provenance", lambda: {"git_commit": metadata["git_commit"], "git_dirty": True})
+    copy = tmp_path / "checkpoint"  # Metadata only: the refusal must come before the policy is even loaded.
+    copy.mkdir()
+    (copy / image_act.METADATA).write_text(json.dumps({**metadata, "git_dirty": dirty == "checkpoint"}))
+    with pytest.raises(ValueError, match="uncommitted changes"):
+        image_act.evaluate(copy, EVAL_SEEDS[:1], tmp_path / "report.json")
+    assert not (tmp_path / "report.json").exists() and ledger.read_rows() == []
 
 
 # ---------------------------------------------------------------- Done for Daniel (strict xfails).
