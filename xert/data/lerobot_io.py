@@ -154,7 +154,8 @@ def _hardware(raw, info, joint_map, raw_units, motor_units):
     if motor_units != "degrees":
         raise ValueError("Radians need an explicit --motor-units degrees: LeRobot 0.6.1 does not record use_degrees")
     map_bytes = Path(joint_map).read_bytes()
-    entries = load_joint_map(joint_map, spec, dry_run=False, contents=map_bytes)  # Any TBD joint is refused here.
+    # Conversion needs the kinematic tier only; any TBD or assumed kinematic field is refused here.
+    entries = load_joint_map(joint_map, spec, dry_run=False, contents=map_bytes, require="kinematic")
     if [e["units"] for e in entries] != ["degrees"] * 5 + ["range_0_100"]:
         raise ValueError("Joint map units must be degrees for the body joints and range_0_100 for the gripper")
     sign = np.array([e["sign"] for e in entries], dtype=np.float64)
@@ -196,6 +197,10 @@ def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, mot
     if calibration is not None and kind != "so101_follower":
         raise ValueError("--calibration applies only to hardware (so101_follower) datasets")
     calibration = _calibration(calibration) if calibration is not None else None
+    if calibration and not raw_units:  # A map from map-from-calibration names the calibration it was fitted on.
+        fitted = (json.loads(Path(joint_map).read_bytes()).get("provenance") or {}).get("calibration", {}).get("sha256")
+        if fitted is not None and fitted != calibration["sha256"]:
+            raise ValueError("Joint map was fitted on a different calibration file than --calibration")
     source_sha256 = _hashes(dataset)
     with tempfile.TemporaryDirectory(prefix=".xert-import-", dir=output.parent) as temporary:
         staging = Path(temporary) / "import"

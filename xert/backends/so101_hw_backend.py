@@ -17,6 +17,8 @@ TBD = "TBD (not measured)"
 DOCUMENTED = ("joint", "motor", "id", "units")
 UNITS = ("degrees", "range_0_100", "range_m100_100")  # lerobot/motors/motors_bus.py:169-172 MotorNormMode.
 MEASURED = ("sign","units_per_rad", "zero_offset", "min", "max", "max_speed", "max_accel")
+# Completeness tiers: frame conversion (import-lerobot, replay-real) needs only the kinematic fields; motion needs all.
+TIERS = {"kinematic": MEASURED[:5], "motion": MEASURED}
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,11 @@ class CommandedState(JointState):
     measured: bool = False
 
 
-def load_joint_map(path, spec, *, dry_run, contents=None):
-    """Return one dict per spec joint, or None where any measured value is TBD (dry-run only)."""
+def load_joint_map(path, spec, *, dry_run, contents=None, require="motion"):
+    """Return one dict per spec joint, or None where any measured value is TBD (dry-run only).
+
+    Outside dry-run every field of the `require` tier must be measured (not TBD).
+    """
     raw = json.loads(Path(path).read_bytes() if contents is None else contents)
     joints = raw.get("joints") if isinstance(raw, dict) else None
     if not isinstance(joints, list) or [j.get("joint") if isinstance(j, dict) else None for j in joints] != list(spec.joint_names):
@@ -39,15 +44,18 @@ def load_joint_map(path, spec, *, dry_run, contents=None):
             raise ValueError(f"{entry['joint']}: motor id must be an integer 1..253 and the motor name nonempty")
         if entry["units"] not in UNITS:
             raise ValueError(f"{entry['joint']}: units must be a LeRobot 0.6.1 MotorNormMode value {UNITS}")
-        if any(entry[k] == TBD for k in MEASURED):
-            if not dry_run:
-                raise ValueError(f"{entry['joint']}: TBD joint-map values are refused outside dry-run; measure them (P6.1)")
+        tbd = [k for k in MEASURED if entry[k] == TBD]
+        if tbd and dry_run:
             mapped.append(None)  # Never guessed: an unmeasured joint stays unmapped.
             continue
-        if any(type(entry[k]) not in (int, float) or not np.isfinite(entry[k]) for k in MEASURED):
+        if set(tbd) & set(TIERS[require]):
+            raise ValueError(f"{entry['joint']}: TBD joint-map values {tbd} are refused outside dry-run for "
+                             f"{require}; measure them (P6.1)")
+        present = [k for k in MEASURED if k not in tbd]
+        if any(type(entry[k]) not in (int, float) or not np.isfinite(entry[k]) for k in present):
             raise ValueError(f"{entry['joint']}: measured values must be finite numbers or {TBD!r}")
         if (entry["sign"] not in (-1, 1) or entry["units_per_rad"] <= 0 or entry["min"] >= entry["max"] or
-                entry["max_speed"] <= 0 or entry["max_accel"] <= 0):
+                any(entry[k] <= 0 for k in ("max_speed", "max_accel") if k in present)):
             raise ValueError(f"{entry['joint']}: sign must be +/-1; scale, speed, accel positive; min < max")
         mapped.append(entry)
     if len({j["id"] for j in joints}) != len(joints):

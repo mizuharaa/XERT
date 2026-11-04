@@ -209,3 +209,31 @@ def test_recorder_and_latency_refuse_commanded_state(tmp_path):
     assert any(r["latency_sample"] for r in records) and all(r["state_measured"] is False for r in records)
     with pytest.raises(ValueError, match="measured state"):
         summarize(records, require_webcam=False)
+
+
+def test_kinematic_tier_accepts_tbd_speed_but_motion_needs_all_seven(tmp_path):
+    raw = json.loads(fixture_map(tmp_path).read_text())
+    raw["joints"][-1].update(sign=1, zero_offset=0.0, min=0.0, max=100.0)
+    for entry in raw["joints"]:
+        entry.update(max_speed=TBD, max_accel=TBD)  # The F1 tool leaves these to Daniel.
+    contents = json.dumps(raw)
+    entries = load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=contents, require="kinematic")
+    assert [e["max_speed"] for e in entries] == [TBD] * 6
+    with pytest.raises(ValueError, match="max_speed.*max_accel.*for motion"):
+        load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=contents)  # Default tier is motion.
+    assert load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=contents) == [None] * 6  # Dry-run unchanged.
+    raw["joints"][0]["zero_offset"] = TBD
+    with pytest.raises(ValueError, match="shoulder_pan.*zero_offset.*for kinematic"):
+        load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw), require="kinematic")
+
+
+def test_one_pose_joint_left_tbd_is_refused_for_both_tiers(tmp_path):
+    raw = json.loads(fixture_map(tmp_path).read_text())
+    raw["joints"][-1].update(sign=1, zero_offset=0.0, min=0.0, max=100.0)
+    assert all(load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw)))
+    # map-from-calibration with one sim_q value: min/max filled from the calibration, the line left TBD.
+    raw["joints"][2].update(sign=TBD, units_per_rad=TBD, zero_offset=TBD)
+    for require in ("kinematic", "motion"):
+        with pytest.raises(ValueError, match="elbow_flex.*TBD.*sign"):
+            load_joint_map(TEMPLATE, SPEC, dry_run=False, contents=json.dumps(raw), require=require)
+    assert load_joint_map(TEMPLATE, SPEC, dry_run=True, contents=json.dumps(raw))[2] is None
