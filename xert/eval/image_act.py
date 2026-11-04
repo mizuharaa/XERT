@@ -314,6 +314,15 @@ def live_frame(backend, renderer, features, native_names):
             for key, feature in features.items()}
 
 
+def decode(action, units, low, high):
+    """Policy action in dataset units -> absolute joint targets in radians (P4.1 radians, or P2.1 [-1, 1])."""
+    if units == "radians":
+        return action
+    if units == "normalized":
+        return low + (action + 1) / 2 * (high - low)
+    raise ValueError(f"Unknown action units {units!r}")
+
+
 def rollout(policy, preprocessor, postprocessor, spec, seed, metadata):
     """One held-out bench episode; success is the native core's contact rule. One renderer per rollout."""
     import torch
@@ -337,9 +346,8 @@ def rollout(policy, preprocessor, postprocessor, spec, seed, metadata):
             infer.append(time.perf_counter() - middle)
             if action.shape != low.shape or not np.isfinite(action).all():
                 raise ValueError("Image ACT emitted an invalid action")
-            if metadata["action_units"] == "normalized":
-                action = low + (action + 1) / 2 * (high - low)
-            backend.send_targets(np.clip(action, low, high), None)  # Joint-limit clip only, as in P5.3.
+            backend.send_targets(np.clip(decode(action, metadata["action_units"], low, high), low, high),
+                                 None)  # Joint-limit clip only, as in P5.3.
             if backend.info["success"]:
                 break
     finally:

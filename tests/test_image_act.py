@@ -1,20 +1,21 @@
-"""G1 plumbing on a tiny scripted rendered recording (64 px, 5 frames, CPU): no ledger rows, no training result."""
+"""G1 plumbing on a tiny scripted rendered recording (64 px, 5 frames, CPU): no ledger rows, no training result.
+
+The pure helper tests run in the base environment; everything that renders or trains needs LeRobot."""
 import json
 import os
 
 import numpy as np
 import pytest
 
-pytest.importorskip("lerobot")
-
-from xert.eval import image_act  # noqa: E402
-from xert.eval import ledger  # noqa: E402
+from xert.eval import image_act
+from xert.eval import ledger
 
 EVAL_SEEDS = [10000, 10001]
 
 
 @pytest.fixture(scope="module")
 def rendered(tmp_path_factory):
+    pytest.importorskip("lerobot")
     from test_gate_experiment import scripted_session
     from xert.data.cameras import render_cameras
     root = tmp_path_factory.mktemp("image_act")
@@ -26,6 +27,17 @@ def rendered(tmp_path_factory):
             raise
         pytest.skip(f"No offscreen GL context: {exc!r}")
     return session, root / "rendered"
+
+
+def test_decode_keeps_radians_and_maps_normalized_actions_to_the_joint_ranges():
+    low, high = np.array([-1.5, 0.0]), np.array([0.5, 3.0])
+    radians = np.array([0.25, 2.0])
+    np.testing.assert_array_equal(image_act.decode(radians, "radians", low, high), radians)
+    np.testing.assert_allclose(image_act.decode(np.array([-1.0, -1.0]), "normalized", low, high), low)
+    np.testing.assert_allclose(image_act.decode(np.array([1.0, 1.0]), "normalized", low, high), high)
+    np.testing.assert_allclose(image_act.decode(np.zeros(2), "normalized", low, high), (low + high) / 2)
+    with pytest.raises(ValueError, match="Unknown action units"):
+        image_act.decode(radians, "degrees", low, high)
 
 
 def fixture_settings(dataset_meta):
