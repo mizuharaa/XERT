@@ -22,8 +22,11 @@ no camera device, no new dependency.
       any augmentation;
     - loads action chunks with `delta_timestamps` (padded at episode ends, `action_is_pad`);
     - seeds torch and the shuffle generator;
-    - runs the epochs, with prior-inference validation L1 per epoch as in P1.4;
-    - saves every epoch, then keeps the one `select_epoch` chooses;
+    - runs the epochs, with validation L1 per epoch by the P1.4 method (ACT's prior, no VAE encoder), in the
+      policy's normalized action space;
+    - keeps only one epoch's weights on disk (the P1.4 keep-best pattern): `select_epoch` runs after each epoch,
+      and the newest epoch is saved only if it is picked. A pick that is neither the newest epoch nor the previous
+      pick is refused. A failed run removes `epochs/`;
     - writes the official policy files, the official pre/post-processors (which hold the train-only statistics) and
       `xert_image_act.json`. That file holds robot, dataset sha256, split, source kinds, training bench seeds, camera
       definitions, feature specs, settings, history, selected epoch, git commit and library versions.
@@ -37,7 +40,12 @@ no camera device, no new dependency.
     - It always writes a report JSON: trials, successes, Wilson 95% interval, per-tick timing.
     - **Ledger rows** (`slice G1`, `metric success_rate`, experiment `image_act_v1` by default) are written only
       when every training source kind is human (`webcam`/`recorded_human`, the P5.3 rule) and there are at least
-      30 seeds. Otherwise the report says why there is no row.
+      30 seeds (`_ledger_reason`; empty source kinds never count as human). Otherwise the report says why there
+      is no row.
+    - When rows would be written, it refuses before any rollout (as in P5.3) if the working tree or the
+      checkpoint's training run was dirty, or if the ledger already holds a row with the same experiment tag for
+      the same checkpoint (`checkpoint_sha256`, the sha256 of `xert_image_act.json`). Re-running a checkpoint on
+      new seeds under one tag would be seed-shopping. A report on a dirty tree is still allowed.
 - **Live render at evaluation.** Each tick, `live_frame()` takes the live joint positions and the block pose from
   the native observation, by name. `CameraRenderer.render()` uses them, the same code and camera definitions as
   `render-cameras`. Images go to the policy as float (3, H, W) in [0, 1], the same form LeRobotDataset returns the
@@ -46,7 +54,14 @@ no camera device, no new dependency.
   between two bench steps, and every step advances physics by exactly 1/25 s. So the 25 Hz contract holds in sim
   time whatever rendering costs. This says nothing about real-time feasibility on hardware.
 - **Actions.** Recording actions (`<joint>.pos`, radians) are sent as they are. Export actions (joint names,
-  normalized to [-1, 1]) are mapped back through the actuator ranges. Any other action naming is refused.
+  normalized to [-1, 1]) are mapped back through the actuator ranges (`decode`). Any other action naming is
+  refused.
+- **Plumbing choices to be ready to defend** (mine, not CORE, but they shape training):
+  - the training loader uses `shuffle=True` with a seeded generator and `drop_last=False` (the DataLoader default),
+    so the last batch of an epoch can be smaller;
+  - `STD_FLOOR = 1e-4` applies to every normalized feature: state, environment state, images and actions. It keeps a
+    constant feature, such as the static tray, from dividing by about zero;
+  - validation L1 is computed every epoch whether or not `select_epoch` uses it.
 - `tests/test_image_act.py`; `optional.yml` runs it in the lerobot and teleop jobs.
 
 ## How to verify (one process at a time)
@@ -84,12 +99,14 @@ All four are in `xert/eval/image_act.py`. Their contracts are in the docstrings.
 | `select_epoch(history)` | :76 | checkpoint selection and early stopping |
 
 **Done** = both strict xfails in `tests/test_image_act.py` pass with their markers removed:
-- `:148` `test_daniel_settings_build_a_valid_image_act_config`: the settings build a valid ACTConfig with both
+- `:225` `test_daniel_settings_build_a_valid_image_act_config`: the settings build a valid ACTConfig with both
   image keys, and they are JSON-serializable.
-- `:158` `test_daniel_training_gives_a_checkpoint_whose_evaluation_writes_rows`: `train` with your stubs gives a
-  checkpoint, and `evaluate` on 30 held-out seeds writes one ledger row (temporary ledger; the scripted fixture
-  is treated as human only for this check). This is a harness check, not a performance bar. Its rollouts take
-  30 × 600 ticks at your model's inference cost.
+- `:235` `test_daniel_training_gives_a_checkpoint_that_evaluates`: `train` with your stubs gives a checkpoint,
+  and `evaluate` on one held-out seed writes a report. It uses one seed so CI stays inside its 20-minute timeout.
+  The ≥ 30-seed row path is covered by `test_human_data_on_enough_seeds_writes_one_row`. This is a harness
+  check, not a performance bar.
+- **The real ≥ 30-seed evaluation is a manual run, not CI**: `image-act evaluate` on human-demo checkpoints from
+  a clean, committed tree. It takes 30 × up to 600 ticks at your model's inference cost.
 
 **Performance targets are yours to pre-register** (commit them before the first evaluate, as in P5.3). The code
 has no success threshold.
@@ -117,7 +134,7 @@ has no success threshold.
 - TASKS.md table: `| G1 | image-act train/evaluate scaffolding: official ACT on rendered scene + wrist images | feat/g1-image-act | Scaffolding; training is TODO(daniel) | [G1-image-act.md](G1-image-act.md) |`
 - TASKS.md queue: "**G1, image-ACT training choices**: `image_act_settings` :37, `make_optimizer` :56,
   `training_step` :64, `select_epoch` :76 in `xert/eval/image_act.py`. Done = the two strict xfails in
-  `tests/test_image_act.py` (:148, :158) pass unmarked; pre-register the performance target first."
+  `tests/test_image_act.py` (:225, :235) pass unmarked; pre-register the performance target first."
 - README / MVP_PROGRESS: "`python -m xert image-act train|evaluate`: official LeRobot ACT on rendered
   scene + wrist images, live renders at evaluation, ledger rows only for human data on ≥ 30 held-out seeds.
   No trained policy yet."
