@@ -141,15 +141,18 @@ def test_checkpoint_records_train_only_normalization_and_provenance(rendered, ch
     assert all(row["validation_l1"] is not None for row in metadata["history"])
     assert len(metadata["dataset_sha256"]) == 64 and metadata["camera"]["size"] == 64
     assert not (checkpoint / "epochs").exists()
-    # The normalizer holds statistics of the training episode alone, not of both episodes.
-    train = LeRobotDataset(image_act.REPO_ID, root=rendered[1] / "episode_000000")
-    state = torch.stack([train[i]["observation.state"] for i in range(len(train))])
-    stats = image_act.train_stats([train], ["observation.state", "observation.images.scene"])
-    torch.testing.assert_close(stats["observation.state"]["mean"], state.mean(0))
-    assert stats["observation.images.scene"]["mean"].shape == (3, 1, 1)
-    saved = {name: path for name, path in ((p.name, p) for p in checkpoint.iterdir())}
-    assert {"config.json", "model.safetensors", "policy_preprocessor.json", "policy_postprocessor.json"} <= set(saved)
-    del train
+    # The SAVED normalizer holds statistics of the training episode (0) alone, not of both episodes.
+    from safetensors.torch import load_file
+    [normalizer] = checkpoint.glob("policy_preprocessor_*normalizer_processor.safetensors")
+    saved = load_file(normalizer)
+    states = [torch.stack([d[i]["observation.state"] for i in range(len(d))])
+              for d in (LeRobotDataset(image_act.REPO_ID, root=rendered[1] / name)
+                        for name in ("episode_000000", "episode_000001"))]
+    torch.testing.assert_close(saved["observation.state.mean"], states[0].mean(0))
+    assert not torch.allclose(saved["observation.state.mean"], torch.cat(states).mean(0))
+    assert saved["observation.images.scene.mean"].shape == (3, 1, 1)
+    files = {path.name for path in checkpoint.iterdir()}
+    assert {"config.json", "model.safetensors", "policy_preprocessor.json", "policy_postprocessor.json"} <= files
 
 
 def test_live_render_features_equal_the_dataset_features(rendered, checkpoint):
