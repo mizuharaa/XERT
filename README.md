@@ -229,6 +229,11 @@ a measurement yet. The task list and each slice's handoff are in
   limits) from the LeRobot calibration file and at least two still-pose
   recordings with asserted sim angles. It reads files only and never opens the
   bus. `max_speed`/`max_accel` stay `TBD` for the owner to choose.
+- **Image-ACT scaffold (slice G1).** `python -m xert image-act train|evaluate`
+  trains official LeRobot ACT on rendered `scene`/`wrist` images and evaluates
+  it on the bench, rendering the cameras live each tick. Every training choice
+  (settings, optimizer, loss, epoch selection) is a `TODO(daniel)` stub, so
+  `train` refuses until they exist. No policy has been trained.
 - **Hardware backend (P6 prep).** `python -m xert hw-dry-run` prints motor
   targets and never opens the bus. See [docs/learn/P6.md](docs/learn/P6.md) for
   the bring-up order and the P6.2 blockers.
