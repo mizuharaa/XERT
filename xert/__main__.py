@@ -11,13 +11,14 @@ def main():
     ledger = commands.add_parser("ledger")
     ledger.add_subparsers(dest="operation", required=True).add_parser("show")
     from .runtime.cli import add_commands, execute
-    from .data import cameras, lerobot_io, quality
+    from .data import cameras, lerobot_io, map_from_calibration, quality
     from .eval import replay_real
     add_commands(commands)
     quality.add_command(commands)
     cameras.add_command(commands)
     lerobot_io.add_commands(commands)
     replay_real.add_command(commands)
+    map_from_calibration.add_command(commands)
     args = parser.parse_args()
     if args.command == "quality":
         quality.execute(args)
@@ -27,6 +28,9 @@ def main():
         return
     if args.command in ("export-lerobot", "import-lerobot", "to-store"):
         lerobot_io.execute(args)
+        return
+    if args.command == "map-from-calibration":
+        map_from_calibration.execute(args)
         return
     if args.command == "replay-real":
         replay_real.execute(args)
