@@ -14,7 +14,7 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | B2 | SO-101 export schema + cameras (wrist = Menagerie `wrist_cam`) | `feat/b2-so101-export` | Merged | [B2-so101-export.md](B2-so101-export.md) |
 | F1 | `xert map-from-calibration`: fills the SO-101 joint map from a LeRobot calibration + ≥2 still-pose recordings (files only) | `feat/f1-map-from-calibration` | Merged | [F1-map-from-calibration.md](F1-map-from-calibration.md) |
 | env | Real-arm environment: LeRobot `[feetech]` extra (STS3215 SDK, pyserial, deepdiff) in the teleop locks; `python -m scripts.hw_env_check` readiness report | on integration | Done 2026-11-04; teleop CI job green with the new lock | README "Python environments" |
-| G1 | Image-ACT train/evaluate scaffold on rendered `scene`/`wrist` (settings, loss and selection are TODO(daniel)) | `feat/g1-image-act` | Building | `G1-image-act.md` |
+| G1 | Image-ACT train/evaluate scaffold on rendered `scene`/`wrist` (settings, loss and selection are TODO(daniel)) | `feat/g1-image-act` | Merged | [G1-image-act.md](G1-image-act.md) |
 
 ## Daniel's TODO(daniel) queue
 These fill in as slices land. Each entry gives file:line and the test that defines "done".
@@ -25,6 +25,9 @@ These fill in as slices land. Each entry gives file:line and the test that defin
   - `so101_expert_targets()` at :11 (waypoints) and `so101_expert_action()` at :30 (IK targets, gains, rate limits).
   - Done = the three strict xfails in `tests/test_so101_expert.py` (:43 pre-grasp within 5 mm, :54 success on seeds 0..8, :62 held-out success) pass with their markers removed.
   - The 5 mm pre-grasp test is weak: a naive hover passes it. The success tests are the real bar.
+- **G1, image-ACT training choices** (`xert/eval/image_act.py`): `image_act_settings()`, `make_optimizer()`, `training_step()`, `select_epoch()`.
+  - Done = the two strict xfails in `tests/test_image_act.py` pass with their markers removed: valid settings, then a checkpoint that evaluates (1 seed in CI; the real ≥30-seed evaluation is a manual run).
+  - Ledger rows need human training data, ≥30 held-out seeds, a clean tree and an unused experiment tag. Only the selected epoch is saved.
 - **D, actuator parameter fitting** (system identification): `fit_actuator_params()` at `xert/eval/replay_real.py:269`.
   - Done = the strict xfail at `tests/test_replay_real.py:221` passes with its marker removed: on a kp×0.5 synthetic recording, held-out RMSE < 0.1 × baseline and fitted kp within 10% of 499.11.
   - Results and any fit are tied to the replay dt (QA measured 0.0016–0.0118 rad RMSE between runs that differ only in timestep).
