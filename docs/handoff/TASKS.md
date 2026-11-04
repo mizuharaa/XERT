@@ -12,6 +12,7 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | B | SO-101 as a second bench robot, `--robot` CLI, timing contract | `feat/b-so101-bench` | Merged | [B-so101-bench.md](B-so101-bench.md) |
 | D | Real-vs-sim replay: per-joint plots + RMSE (sysid step 1) | `feat/d-replay-real` | Merged | [D-replay-real.md](D-replay-real.md) |
 | B2 | SO-101 export schema + cameras (wrist = Menagerie `wrist_cam`) | `feat/b2-so101-export` | Merged | [B2-so101-export.md](B2-so101-export.md) |
+| F1 | `xert map-from-calibration`: fills the SO-101 joint map from a LeRobot calibration + ≥2 still-pose recordings (files only) | `feat/f1-map-from-calibration` | Merged | [F1-map-from-calibration.md](F1-map-from-calibration.md) |
 
 ## Daniel's TODO(daniel) queue
 These fill in as slices land. Each entry gives file:line and the test that defines "done".
@@ -47,6 +48,12 @@ Already defaulted earlier and unchanged:
 - `--spec` selects the teleop arm
 - earlier agent-written CORE code is kept as tutoring material
 - `--motor-units degrees` asserts LeRobot's `use_degrees=True`
+
+## Real-arm first steps (F1 merged)
+1. `lerobot-calibrate` the follower, then the leader (`--teleop.*`). At the "middle of range" prompt, put `wrist_roll` at sim roll 0.
+2. Record ≥2 short `lerobot-record` episodes holding the arm still in known poses (the bench reset pose plus one with every joint moved ≥ its minimum spread; table in the F1 handoff), cameras named `scene`/`wrist`.
+3. `python -m xert map-from-calibration --calibration <robots/so_follower/<id>.json> --poses poses.json --output <fresh map>`; read it, then copy it into `configs/hardware/so101_joint_map.yaml` by hand. `max_speed`/`max_accel` stay yours to choose.
+4. Then `import-lerobot --motor-units degrees --calibration …` and `replay-real` accept real recordings.
 
 ## Waiting on Daniel (hands-on)
 P3.5 live webcam runs, P3.6 clip, P4.1 live check, P4.2 demos, P5.2 thresholds, P5.3 run, demo video, SO-101 bring-up (P6.1/P6.2 per `docs/learn/P6.md`).
