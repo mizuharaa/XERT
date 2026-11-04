@@ -40,6 +40,14 @@ def test_decode_keeps_radians_and_maps_normalized_actions_to_the_joint_ranges():
         image_act.decode(radians, "degrees", low, high)
 
 
+def test_ledger_rows_need_human_only_data_and_30_seeds():
+    assert image_act._ledger_reason(["webcam"], 30) is None
+    assert image_act._ledger_reason(["webcam", "recorded_human"], 31) is None
+    assert image_act._ledger_reason(["webcam"], 29) == "no rows: 29 seeds < 30"
+    assert image_act._ledger_reason([], 30).startswith("no rows: training data is []")
+    assert image_act._ledger_reason(["webcam", "scripted"], 30).startswith("no rows: training data is")
+
+
 def fixture_settings(dataset_meta):
     """Smoke-test shape (tests/test_cameras.py); seconds of CPU, not a choice and not an experiment."""
     from lerobot.configs.types import NormalizationMode

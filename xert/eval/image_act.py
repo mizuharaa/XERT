@@ -356,6 +356,15 @@ def rollout(policy, preprocessor, postprocessor, spec, seed, metadata):
             "failure_reason": backend.info["failure_reason"]}, render, infer
 
 
+def _ledger_reason(kinds, n):
+    """Why an evaluation writes no ledger row, or None: rows need human-only training data and enough seeds."""
+    if not kinds or set(kinds) - set(HUMAN_SOURCES):
+        return f"no rows: training data is {list(kinds)}, not only {list(HUMAN_SOURCES)}"
+    if n < MIN_EVAL_EPISODES:
+        return f"no rows: {n} seeds < {MIN_EVAL_EPISODES}"
+    return None
+
+
 def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
     """Roll a checkpoint out on held-out bench seeds; a report file always, ledger rows only for human data."""
     import torch
@@ -373,8 +382,7 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
         raise ValueError("Evaluation seeds overlap the training demonstrations' bench seeds; held-out states required")
     if CAMERAS[metadata["robot"]] != metadata["camera"]["cameras"]:
         raise ValueError("CAMERAS changed since training; live renders would differ from the training images")
-    human = set(metadata["source_kinds"]) <= set(HUMAN_SOURCES)
-    write = human and len(seeds) >= MIN_EVAL_EPISODES
+    reason = _ledger_reason(metadata["source_kinds"], len(seeds))
     provenance = ledger.source_provenance()
     policy = ACTPolicy.from_pretrained(checkpoint, local_files_only=True)
     policy.eval()
@@ -394,9 +402,7 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
         "train_seed": metadata["seed"], "seeds": list(seeds), "trials": trials, "successes": successes,
         "n": len(trials), "success_rate": successes / len(trials), "ci95": wilson(successes, len(trials)),
         "source_kinds": metadata["source_kinds"],
-        "ledger": "rows appended" if write else (
-            f"no rows: training data is {metadata['source_kinds']}, not {list(HUMAN_SOURCES)}" if not human
-            else f"no rows: {len(seeds)} seeds < {MIN_EVAL_EPISODES}"),
+        "ledger": reason or "rows appended",
         "timing_ms_per_tick": {"ticks": len(render), "render_mean": 1e3 * float(np.mean(render)),
                                "render_max": 1e3 * float(np.max(render)),
                                "inference_mean": 1e3 * float(np.mean(infer)),
@@ -404,7 +410,7 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
         "notes": "Simulated time: rendering and inference run between 1/25 s bench steps with no wall-clock "
                  "deadline. Images are live MuJoCo renders, not camera data. No hardware claim."}
     row = None
-    if write:
+    if reason is None:
         row = ledger.new_row(**provenance, slice="G1", experiment=experiment, backend="mujoco",
                              embodiment=metadata["robot"], metric="success_rate", value=report["success_rate"],
                              ci95=report["ci95"], n=len(trials), seeds={"train": [metadata["seed"]], "eval": list(seeds)},
