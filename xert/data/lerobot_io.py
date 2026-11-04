@@ -197,6 +197,10 @@ def import_lerobot(dataset, output, *, joint_map=JOINT_MAP, raw_units=False, mot
     if calibration is not None and kind != "so101_follower":
         raise ValueError("--calibration applies only to hardware (so101_follower) datasets")
     calibration = _calibration(calibration) if calibration is not None else None
+    if calibration and not raw_units:  # A map from map-from-calibration names the calibration it was fitted on.
+        fitted = (json.loads(Path(joint_map).read_bytes()).get("provenance") or {}).get("calibration", {}).get("sha256")
+        if fitted is not None and fitted != calibration["sha256"]:
+            raise ValueError("Joint map was fitted on a different calibration file than --calibration")
     source_sha256 = _hashes(dataset)
     with tempfile.TemporaryDirectory(prefix=".xert-import-", dir=output.parent) as temporary:
         staging = Path(temporary) / "import"
