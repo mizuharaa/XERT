@@ -37,6 +37,17 @@ hashes).
 Both names are relative in the code (`joint_states`, `xert/joint_commands`),
 so a launch namespace moves them together with `robot_state_publisher`.
 
+### Command stamp
+
+On `/xert/joint_commands`, header.stamp = generation time of the
+safety-checked command; capture freshness is enforced upstream by the safety
+layer. The sender's `SafetyController` already turns stale camera input into
+hold, then return, then rest, and publishes those commands too. A receiver
+only checks transport freshness: a command whose stamp is more than 0.2 s
+old arrived late or was lost, so it is not acted on as new. The publisher in
+`ros/xert_ros_bridge` (`xert_bridge`) follows this rule, and
+`tests/test_ros_bridge.py` checks this table and sentence against its code.
+
 ### Why JointState for commands
 
 A position-only `JointState` carries the joint names next to the values, so
