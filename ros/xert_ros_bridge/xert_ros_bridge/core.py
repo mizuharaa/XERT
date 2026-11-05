@@ -44,6 +44,8 @@ def open_pipeline(source, spec, profile, *, clip=None, calibration=None, duratio
     try:
         if source == "clip":
             from xert.sources.motion_file import MotionFileSource, load_clip
+            if not clip:
+                raise ValueError("--source clip needs --clip <landmark clip>")
             _, frames = load_clip(clip)
             if calibration is None:
                 hands = required_hands(load_profile(profile, loaded, contents=inputs["profile_bytes"]))

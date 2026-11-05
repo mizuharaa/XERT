@@ -12,6 +12,7 @@ import threading
 import time
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 from rclpy.utilities import remove_ros_args
@@ -57,6 +58,8 @@ def main(argv=None):
         publisher = node.create_publisher(JointState, COMMANDS[0].lstrip('/'), qos(COMMANDS))
         threading.Thread(target=executor.spin, daemon=True).start()
         # One offset for the whole run: ROS clock minus run_loop's perf_counter clock.
+        # ponytail: measured once, so system-clock slewing (NTP, at most ~0.5 ms/s) drifts it during long
+        # webcam runs; re-measure per command if FUTURE_S or STALE_S ever trip on drift.
         offset_ns = node.get_clock().now().nanoseconds - time.perf_counter_ns()
         node.get_logger().info(f'clock offset (ROS time - perf_counter) = {offset_ns} ns')
         while publisher.get_subscription_count() < args.wait_subscribers and not stop.is_set():
@@ -73,6 +76,8 @@ def main(argv=None):
                 sent.append(record['phase'])
 
         run_loop(source, backend, mapper, duration, on_step=on_step, stop_requested=stop.is_set)
+        # The last command (rest or e-stop) is the one nothing replaces: let reliable delivery finish.
+        publisher.wait_for_all_acked(Duration(seconds=1))
         node.get_logger().info(f'published {len(sent)} commands; last phase {sent[-1] if sent else None}')
     finally:
         executor.shutdown()
