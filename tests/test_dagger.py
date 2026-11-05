@@ -191,3 +191,69 @@ def test_two_iterations_relabel_replay_train_on_labels_and_append(seed_collectio
             assert not np.array_equal(trained["actions"], source.load_episode(ref["id"])[0]["actions"])
     assert_aggregate_is_clean(run)
     assert ledger.read_rows() == []
+
+
+def test_failure_after_collection_before_the_report_then_retry(seed_collection, tmp_path, monkeypatch):
+    from xert.eval import gate_experiment
+    install_rules(monkeypatch)
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    before = (run / "manifest.json").read_bytes()
+
+    def evaluation_fails(*args, **kwargs):
+        raise RuntimeError("injected evaluation failure")
+
+    real_rollout = gate_experiment.rollout
+    monkeypatch.setattr(gate_experiment, "rollout", evaluation_fails)
+    with pytest.raises(RuntimeError, match="injected"):
+        dagger.iterate(run)
+    attempt = run / "iteration_001/attempt_1"
+    staged = json.loads((attempt / "collection.json").read_text())["episode_ids"]
+    assert len(staged) == 2 and not (attempt / "report.json").exists()  # Collected, never reported.
+    assert (run / "manifest.json").read_bytes() == before  # Aggregate unchanged.
+    with pytest.raises(ValueError, match="--retry"):
+        dagger.iterate(run)
+    monkeypatch.setattr(gate_experiment, "rollout", real_rollout)
+    incomplete = files(attempt)
+    report = dagger.iterate(run, retry=True)
+    entry = manifest(run)["iterations"][1]
+    assert (report["attempt"], entry["attempt"]) == (2, 2)
+    assert entry["incomplete_attempts"] == ["iteration_001/attempt_1"] and report["incomplete_attempts"] == [1]
+    assert files(attempt) == incomplete  # The failed attempt is kept, untouched, and never referenced.
+    assert not {ref["id"] for ref in aggregate(run)} & set(staged) and len(aggregate(run)) == 5
+    assert_aggregate_is_clean(run)
+    with pytest.raises(ValueError, match="Nothing to retry"):
+        dagger.iterate(run, retry=True)
+
+
+@pytest.mark.parametrize("moment", ["before", "after"])
+def test_interruption_around_the_manifest_replacement(seed_collection, tmp_path, monkeypatch, moment):
+    install_rules(monkeypatch)
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    before = (run / "manifest.json").read_bytes()
+    real_write = dagger.atomic_json
+
+    def interrupted(path, value):
+        if Path(path).name != "manifest.json":
+            return real_write(path, value)
+        if moment == "after":
+            real_write(path, value)
+        raise RuntimeError(f"injected interruption {moment} the manifest replacement")
+
+    monkeypatch.setattr(dagger, "atomic_json", interrupted)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        dagger.iterate(run)
+    monkeypatch.setattr(dagger, "atomic_json", real_write)
+    if moment == "before":
+        assert (run / "manifest.json").read_bytes() == before  # Nothing committed: retry adds the iteration once.
+        report = dagger.iterate(run, retry=True)
+        assert (report["iteration"], report["attempt"]) == (1, 2)
+    else:
+        assert [entry["attempt"] for entry in manifest(run)["iterations"]] == [0, 1]  # Committed.
+        committed = files(run / "iteration_001")
+        report = dagger.iterate(run)  # Proceeds to the next iteration; no retry needed.
+        assert (report["iteration"], report["attempt"]) == (2, 1)
+        assert files(run / "iteration_001") == committed
+    assert len(aggregate(run)) == report["aggregate_episodes"] == 3 + 2 * report["iteration"]
+    assert_aggregate_is_clean(run)
