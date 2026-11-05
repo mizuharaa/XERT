@@ -218,7 +218,7 @@ def test_clip_chain_follower_executes_hold_return_rest(spec, tmp_path, estop):
     else:
         assert phase_runs(phases) == ["hold", "live", "hold", "return", "rest"]
         assert_hold_return_rest(commands, spec.rest)
-        # Measured sim pose at rest: 0.6 mrad worst joint when written; 0.01 rad leaves headroom.
+        # Measured sim pose at rest, within 0.01 rad.
         np.testing.assert_allclose(follower.backend.read_state().q, spec.rest, atol=.01)
     # The bridge has exited: the follower keeps running (no horizon) and holds indefinitely.
     t0 = clock()
