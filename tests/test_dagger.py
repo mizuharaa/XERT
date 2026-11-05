@@ -257,3 +257,35 @@ def test_interruption_around_the_manifest_replacement(seed_collection, tmp_path,
         assert files(run / "iteration_001") == committed
     assert len(aggregate(run)) == report["aggregate_episodes"] == 3 + 2 * report["iteration"]
     assert_aggregate_is_clean(run)
+
+
+# ---------------------------------------------------------------- Done for Daniel (strict xfails).
+# Harness checks, not a performance bar: pre-register the success target before the first iteration.
+
+@pytest.mark.xfail(strict=True, raises=(NotImplementedError, AssertionError),
+                   reason="TODO(daniel): dagger_action, should_stop and dagger_settings must exist and return valid values")
+def test_daniel_rules_exist_and_return_valid_values():
+    action = np.asarray(dagger.dagger_action(np.zeros(6, np.float32), np.full(6, .5, np.float32), 1, 0))
+    assert action.shape == (6,) and np.isfinite(action).all() and np.abs(action).max() <= 1
+    assert type(dagger.should_stop([])) is bool
+    settings = dagger.dagger_settings(1, {"episodes": 100, "frames": 44480})
+    assert set(settings) == {"training", "rollouts"} and type(settings["rollouts"]) is int
+    learning.validate_config(settings["training"])
+    json.dumps(settings)
+
+
+@pytest.mark.xfail(strict=True, raises=(NotImplementedError, AssertionError),
+                   reason="TODO(daniel): with your rules, a 2-iteration run reports and grows the aggregate by the "
+                          "rollout count")
+def test_daniel_two_iterations_grow_the_aggregate_by_the_rollout_count(seed_collection, tmp_path):
+    # Runs Daniel's real settings on the 3-episode fixture: large epochs or rollouts make this slow.
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    size = 3
+    for iteration in (1, 2):
+        report = dagger.iterate(run)
+        expected = dagger.dagger_settings(iteration, {key: report["training"][key] for key in ("episodes", "frames")})
+        assert report["iteration"] == iteration and (run / report["path"] / "report.json").is_file()
+        assert len(report["rollouts"]["episode_ids"]) == expected["rollouts"]
+        assert report["aggregate_episodes"] == len(aggregate(run)) == size + expected["rollouts"]
+        size = report["aggregate_episodes"]
