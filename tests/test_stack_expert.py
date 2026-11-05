@@ -10,6 +10,9 @@ from xert.tasks.stack_expert import stack_expert_action
 
 ROOT = Path(__file__).resolve().parents[1]
 ROBOTS = ("xlerobot_left", "so101")
+# Only "not written yet" (the stub's NotImplementedError) or "criterion unmet" (AssertionError) count as the expected
+# failure; an expert that crashes any other way (bad shape, out-of-limit targets, ...) fails the test outright.
+NOT_DONE = (NotImplementedError, AssertionError)
 
 
 def expert_rollout(robot, seed):
@@ -20,14 +23,16 @@ def expert_rollout(robot, seed):
 
 
 @pytest.mark.parametrize("robot", ROBOTS)
-@pytest.mark.xfail(strict=True, reason="TODO(daniel): scripted stack success on seeds 0..8 (stack_expert.py)")
+@pytest.mark.xfail(strict=True, raises=NOT_DONE, reason="TODO(daniel): scripted stack success on seeds 0..8 "
+                                                     "(stack_expert.py)")
 def test_scripted_stack_success_on_seeds_0_to_8(robot):
     infos = [expert_rollout(robot, seed) for seed in range(9)]
     assert all(info["success"] for info in infos), [info["failure_reason"] for info in infos]
 
 
 @pytest.mark.parametrize("robot", ROBOTS)
-@pytest.mark.xfail(strict=True, reason="TODO(daniel): scripted stack success on held-out seeds 10000..10008")
+@pytest.mark.xfail(strict=True, raises=NOT_DONE, reason="TODO(daniel): scripted stack success on held-out seeds "
+                                                     "10000..10008")
 def test_scripted_stack_success_on_held_out_seeds(robot):
     infos = [expert_rollout(robot, seed) for seed in range(10000, 10009)]
     assert all(info["success"] for info in infos), [info["failure_reason"] for info in infos]
