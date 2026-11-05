@@ -5,11 +5,14 @@ so the subscription and the 25 Hz timer never interleave.
 """
 import argparse
 from collections import Counter
+import signal
 import sys
+import threading
 import time
 
 import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.signals import SignalHandlerOptions
 from rclpy.utilities import remove_ros_args
 from sensor_msgs.msg import JointState
 
@@ -28,7 +31,11 @@ def main(argv=None):
     spec = load_spec(args.spec)
     backend = MuJoCoBackend(spec)
     follower = Follower(spec, backend)
-    rclpy.init(args=argv)
+    # Own SIGINT/SIGTERM handling, as in xert_bridge: the context stays valid until the summary is logged.
+    rclpy.init(args=argv, signal_handler_options=SignalHandlerOptions.NO)
+    halt = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: halt.set())
     node = rclpy.create_node('xert_sim_follower')
     publisher = node.create_publisher(JointState, STATES[0].lstrip('/'), qos(STATES))
 
@@ -71,11 +78,12 @@ def main(argv=None):
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     try:
-        executor.spin()  # on this thread, so it has returned before the teardown below
-    except (KeyboardInterrupt, ExternalShutdownException):
+        while not halt.is_set() and rclpy.ok():  # on this thread, so it has stopped before the teardown
+            executor.spin_once(timeout_sec=.1)
+    except ExternalShutdownException:
         pass
     finally:
-        summary()
+        summary()  # before the context goes: rosout still has a valid publisher
         # Same teardown order as xert_bridge: executor, node, context, then the sim.
         executor.shutdown()
         node.destroy_node()
