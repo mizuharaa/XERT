@@ -14,7 +14,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import LaunchDescriptionSource
+from launch.launch_description_source import LaunchDescriptionSource
 import launch_testing
 import launch_testing.actions
 import launch_testing.asserts
