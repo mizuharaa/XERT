@@ -23,6 +23,8 @@ import numpy as np
 SCHEMA_VERSION = 1
 MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
 MAX_EXPANDED_BYTES = 128 * 1024 * 1024
+# Sources whose episode.npz (executed) and corrective.npz (expert labels) differ: P1.2 noise, slice J DAgger.
+CORRECTIVE_SOURCES = ('scripted_simulation_noise', 'dagger_policy_rollout')
 
 
 def atomic_json(path: Path, value: dict) -> None:
@@ -184,13 +186,13 @@ class Store:
         arrays = validate_arrays(arrays)
         corrective = None
         if corrective_actions is not None:
-            if metadata.get('source') != 'scripted_simulation_noise':
-                raise ValueError('Corrective labels require noisy scripted simulation provenance')
+            if metadata.get('source') not in CORRECTIVE_SOURCES:
+                raise ValueError('Corrective labels require noisy scripted simulation or DAgger rollout provenance')
             corrective = validate_arrays({**arrays, 'actions': corrective_actions})
             if corrective['actions'].shape != arrays['actions'].shape:
                 raise ValueError('Corrective action dimensions differ from executed actions')
-        elif metadata.get('source') == 'scripted_simulation_noise':
-            raise ValueError('Noisy scripted simulation requires corrective labels')
+        elif metadata.get('source') in CORRECTIVE_SOURCES:
+            raise ValueError(f"{metadata['source']} episodes require corrective labels")
         identifier, path = self.create("episodes")
         np.savez_compressed(path / "episode.npz", **arrays)
         result = {**metadata, "id": identifier, "schema_version": SCHEMA_VERSION,
@@ -218,7 +220,7 @@ class Store:
 
     def load_training_episode(self, identifier: str) -> tuple[dict, dict]:
         arrays, metadata = self.load_episode(identifier)
-        corrective = metadata.get('source') == 'scripted_simulation_noise'
+        corrective = metadata.get('source') in CORRECTIVE_SOURCES
         if not corrective:
             if 'corrective_sha256' in metadata or 'training_action_source' in metadata:
                 raise ValueError('Corrective label provenance is inconsistent')
