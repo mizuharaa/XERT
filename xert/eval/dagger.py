@@ -180,7 +180,8 @@ def init(collection, output, eval_seeds=EVAL_SEEDS):
     env, current = backend.env, pipeline.contract(backend.env.metadata())
     records = [store.read("episodes", identifier) for identifier in ids]
     for record in records:  # Metadata first: refuse a stale collection before decoding any payload.
-        if record.get("contract_sha256") != current:
+        if (record.get("contract_sha256") != current
+                or pipeline.contract(record.get("simulation", {})) != record.get("contract_sha256")):
             raise ValueError(
                 f"Seed episode {record.get('id')} was recorded under contract {record.get('contract_sha256')} "
                 f"(implementation_sha256 {record.get('simulation', {}).get('implementation_sha256')}); the current "

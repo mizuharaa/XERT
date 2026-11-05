@@ -114,6 +114,27 @@ def test_init_refuses_the_pre_slice_b_collection(tmp_path):
     assert not (tmp_path / "run").exists()
 
 
+def edited_copy(seed_collection, root, edit):
+    """A byte copy of the seed collection whose first episode's metadata.json is passed through `edit`."""
+    import shutil
+    shutil.copytree(seed_collection, root)
+    identifier = json.loads((root / "collection.json").read_text())["episode_ids"][0]
+    path = root / "dataset/episodes" / identifier / "metadata.json"
+    path.write_text(json.dumps(edit(json.loads(path.read_text()))))
+    return root
+
+
+def test_init_recomputes_the_contract_instead_of_trusting_the_stored_hash(seed_collection, tmp_path):
+    def stale_simulation(record):  # The stored contract_sha256 stays current; the simulation it hashes does not.
+        record["simulation"]["implementation_sha256"] = "473fff47fe0154630fa8d154d0e8f3fd7bb6131a49a8ca222d28e660f00e07b1"
+        return record
+
+    forged = edited_copy(seed_collection, tmp_path / "forged", stale_simulation)
+    with pytest.raises(ValueError, match=r"473fff47.*scripts\.collect_recovery"):
+        dagger.init(forged, tmp_path / "run", EVAL)
+    assert not (tmp_path / "run").exists()
+
+
 def test_init_refuses_evaluation_seeds_inside_the_demonstrations(seed_collection, tmp_path):
     with pytest.raises(ValueError, match="overlap"):
         dagger.init(seed_collection, tmp_path / "run", [101, 10000])
