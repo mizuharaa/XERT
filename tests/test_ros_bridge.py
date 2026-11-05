@@ -132,7 +132,7 @@ def test_transport_loss_brakes_then_holds_without_returning(follower, spec):
     def tick(k, deliver):
         t = k * DT
         q = spec.rest.copy()
-        q[0] = .6 * t  # shoulder_pan ramp at 0.6 rad/s
+        q[0] = spec.velocity_limits[0] * t  # shoulder_pan ramp at its 1 rad/s velocity limit
         if deliver:
             assert follower.accept(spec.joint_names, q, t, t) is None
         measured.append(follower.step(t).q)
@@ -141,16 +141,18 @@ def test_transport_loss_brakes_then_holds_without_returning(follower, spec):
     for k in range(40):
         tick(k, True)
     v0 = (applied[-1][0] - applied[-2][0]) / DT
-    assert v0 == pytest.approx(.6)
+    assert v0 == pytest.approx(spec.velocity_limits[0])
     gap, last_stamp = len(applied), 39 * DT
     for k in range(40, 110):  # 2.8 s of silence: past stale + hold + return (2.7 s) of a watchdog
         tick(k, False)
     pan = np.array(applied)[:, 0]
-    # First tick whose command is stale: from then on the target is the last applied one, so the joint
-    # brakes at the acceleration limit (plan: at 0.6 rad/s it still advances 0.0192 rad on that tick).
+    # First tick whose command is stale: from then on the target is the last applied one. The joint is
+    # still moving (it was braking toward the last command inside the 0.2 s fresh window), so it must
+    # brake by exactly one acceleration step, not stop dead: (v - a*dt)*dt.
     stale = gap + next(i for i in range(70) if (40 + i) * DT - last_stamp > STALE_S)
     v_before = (pan[stale - 1] - pan[stale - 2]) / DT
-    assert pan[stale] - pan[stale - 1] == pytest.approx(max(v_before - accel * DT, 0) * DT)
+    assert v_before > .1
+    assert pan[stale] - pan[stale - 1] == pytest.approx((v_before - accel * DT) * DT)
     braking_ticks = int(np.ceil(v0 / (accel * DT))) + 1
     assert np.all(pan[stale + braking_ticks:] == pan[-1])  # then the applied target is constant ...
     assert pan[-1] - pan[gap - 1] <= v0 * (STALE_S + DT) + v0 ** 2 / (2 * accel) + EPS

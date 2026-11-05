@@ -144,11 +144,13 @@ ros2 launch xert_ros_bridge bridge.launch.py clip:=/path/to/clip.json
     changing the target or its stamp; the 0.2 s freshness edge;
   - coalesced delivery (every other command): applied per-tick velocity
     and acceleration stay inside the spec limits;
-  - transport loss for 2.8 s while panning at 0.6 rad/s: on the first stale
-    tick the joint advances `(v - a*dt)*dt`, the plan's 0.0192 rad
-    formula; braking displacement is bounded; the applied target is then
-    constant with no return to rest; tracking resumes, still inside the
-    limits;
+  - transport loss for 2.8 s while panning at the 1 rad/s velocity limit:
+    inside the 0.2 s fresh window the joint brakes toward the last command,
+    so it is still moving at 0.4 rad/s on the first stale tick, where it
+    advances exactly one acceleration step less, `(v - a*dt)*dt` = 0.0112
+    rad (a follower that stopped dead would fail this); braking
+    displacement is bounded; the applied target is then constant with no
+    return to rest; tracking resumes, still inside the limits;
   - a 300 ms sleep in `send_targets`: the stamp is the generation time,
     the record is an overrun and is not published, and the follower treats
     the command as stale (no movement);
