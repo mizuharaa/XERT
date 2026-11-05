@@ -56,6 +56,34 @@ def phase_runs(phases):
     return [p for i, p in enumerate(phases) if i == 0 or phases[i - 1] != p]
 
 
+def replay_follower(spec, commands, tick_stamps):
+    """Expected measured pose of a follower at each of its received tick stamps (seconds, ROS clock).
+
+    Runs core.Follower offline over the full command stream [(names, positions, stamp_s)], ticking at the
+    real follower's tick times: ticks missing from tick_stamps (lost best-effort samples) are filled at one
+    period, because the real follower still ran them. A command counts as arrived at a tick when its stamp
+    is not later than the tick (receipt ages were sub-millisecond in CI), so the only ambiguity is a command
+    generated within that latency of a tick: one tick of phase.
+    """
+    ticks, kept = [tick_stamps[0]], [0]
+    for stamp in tick_stamps[1:]:
+        missing = round((stamp - ticks[-1]) * spec.control_hz) - 1
+        ticks += [ticks[-1] + (i + 1) / spec.control_hz for i in range(missing)]
+        ticks.append(stamp)
+        kept.append(len(ticks) - 1)
+    backend = MuJoCoBackend(spec)
+    try:
+        follower, poses, i = Follower(spec, backend), [], 0
+        for t in ticks:
+            while i < len(commands) and commands[i][2] <= t:
+                assert follower.accept(commands[i][0], commands[i][1], commands[i][2], t) is None
+                i += 1
+            poses.append(follower.step(t).q)
+    finally:
+        backend.close()
+    return np.array(poses)[kept]
+
+
 def assert_hold_return_rest(commands, rest, hold_ticks=8):
     """Command stream after camera loss, from positions alone (the launch test sees no phases):
     identical commands away from rest (hold), then monotonically closer to rest (return), ending at rest."""
@@ -232,6 +260,33 @@ def test_clip_chain_follower_executes_hold_return_rest(spec, tmp_path, estop):
     if estop:
         assert np.abs(held[-1] - spec.rest).max() > .01  # held mid-return, not walked to rest
     follower.backend.close()
+
+
+def test_replay_follower_reproduces_a_follower_from_its_stamps(spec, tmp_path):
+    """The launch test's per-stamp check, on a follower whose every tick is known: replay from a third of
+    the samples lost must give the same measured poses exactly."""
+    source, backend, mapper, duration = open_pipeline("clip", SPEC, PROFILE, clip=scripted_clip(tmp_path, MOVES))
+    clock = Clock()
+    source.clock = clock
+    commands = []
+    run_loop(source, backend, mapper, duration, clock=clock, sleep=clock.sleep,
+             on_step=lambda r: commands.append((list(spec.joint_names), r["command"], r["t_command"])))
+    # The "real" follower: ticks 13 ms out of phase with the bridge from 0.5 s before its first command;
+    # a command arrives 0.5 ms after it was generated.
+    real = Follower(spec, MuJoCoBackend(spec))
+    stamps, poses, i = [], [], 0
+    for j in range(round((duration + 2) * spec.control_hz)):
+        t = commands[0][2] - .5 + .013 + j * DT
+        while i < len(commands) and commands[i][2] + .0005 <= t:
+            assert real.accept(*commands[i][:2], commands[i][2], t) is None
+            i += 1
+        stamps.append(t)
+        poses.append(real.step(t).q)
+    real.backend.close()
+    kept = [j for j in range(len(stamps)) if j % 3 != 2]
+    replayed = replay_follower(spec, commands, [stamps[j] for j in kept])
+    np.testing.assert_allclose(replayed, np.array(poses)[kept], rtol=0, atol=1e-12)
+    assert np.abs(replayed - spec.rest).max() > .3  # the gripper peak is in there
 
 
 def test_topic_contract_matches_xert_ros_readme():

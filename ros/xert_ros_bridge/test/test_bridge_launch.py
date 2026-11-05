@@ -34,7 +34,7 @@ from xert_ros_bridge.ros_io import joint_state, qos
 ROOT = Path(xert.__file__).resolve().parents[1]  # ros.yml installs XERT editable from this checkout.
 sys.path.insert(0, str(ROOT / 'tests'))
 from test_motion_file import scripted_clip  # noqa: E402
-from test_ros_bridge import assert_hold_return_rest, MOVES  # noqa: E402
+from test_ros_bridge import assert_hold_return_rest, MOVES, replay_follower  # noqa: E402
 
 SPEC = load_spec(ROOT / 'xert/spec/so101.yaml')
 NAMES = list(SPEC.joint_names)
@@ -180,9 +180,15 @@ class TestBridgeLaunch(unittest.TestCase):
         print(report, flush=True)
         # The follower is a 25 Hz node: its state stamps must be one control period apart.
         self.assertAlmostEqual(float(np.median(np.diff(state_stamps))), 1 / SPEC.control_hz, delta=.005, msg=report)
-        # It must reproduce the commanded excursion. Same limits as the bridge's limiter, so the only slack is
-        # phase: at most one period at the velocity limit between a bridge tick and the follower tick.
-        np.testing.assert_array_less(np.abs(measured - commanded), SPEC.velocity_limits / SPEC.control_hz,
+        # Per stamp, not peak vs peak: replay core.Follower offline over every received command at the
+        # follower's own tick stamps; each measured state must match the replayed one. Same sim, so actuator
+        # lag cancels; the bound is one tick of phase at the velocity limit (a command that arrived just
+        # after a tick in one run and just before it in the replay).
+        commands_s = sorted(((list(m.name), list(m.position), m.header.stamp.sec + m.header.stamp.nanosec * 1e-9)
+                             for m in commands), key=lambda c: c[2])
+        order = np.argsort(state_stamps)
+        expected_states = replay_follower(SPEC, commands_s, list(state_stamps[order]))
+        np.testing.assert_array_less(np.abs(states[order] - expected_states), SPEC.velocity_limits / SPEC.control_hz,
                                      err_msg=report)
         self.assertTrue(wait_for(lambda: np.abs(self.latest() - rest).max() < .01, 5), self.latest())
 
