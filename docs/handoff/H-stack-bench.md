@@ -182,7 +182,16 @@ adds `stable_steps`), `finished`, `object_names`, `metadata()` (recorded as `sou
 - With MuJoCo's default 4 offscreen MSAA samples, re-rendering one identical state on this Windows GPU differed in
   3 of 40 frames for pick_place and 4 of 40 for stack (0 of 40 with `offsamples = 0`). This is pre-existing
   renderer noise, not a path difference. The pixel test turns MSAA off for its comparison. CI uses osmesa.
+  render-cameras keeps the default MSAA (QA's call): changing `offsamples` would change every stored pixel, and the
+  setting is not recorded in `xert_cameras.json`. The existing `tests/test_cameras.py::
+  test_render_is_deterministic_for_a_fixed_state` compares default-MSAA renders, so it is latently flaky on this GPU.
 - Commit a51ce11 has that pixel test flaky in the base venv (1 value off by 1). 2e74d76 fixes it.
+- `image_act.evaluate` refuses a checkpoint whose metadata has no `task_id`. There is no legacy fallback, because no
+  such checkpoint exists: image-ACT training is still TODO(daniel). (QA F4.)
+- `cameras._recorded_task` trusts a manifest's `task_id` without checking it against the fingerprint. Only teleop
+  writes `task_id` into recordings, and the P2.1 exporter writes it into exports. render-cameras still refuses any
+  dataset whose recorded `model_sha256` is not the renderer's model, so a wrong `task_id` cannot render on the wrong
+  scene. quality and the P5.3 harness take the manifest's word. (QA F5.)
 
 ## For integration (not edited here)
 
