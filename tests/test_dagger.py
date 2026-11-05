@@ -281,6 +281,35 @@ def test_a_manifest_changed_during_the_iteration_is_not_overwritten(seed_collect
     assert (run / "iteration_001/attempt_1/report.json").exists()
 
 
+def test_a_tampered_committed_report_is_refused(seed_collection, tmp_path, monkeypatch):
+    install_rules(monkeypatch)
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    dagger.iterate(run)
+    report = run / manifest(run)["iterations"][1]["report"]
+    record = json.loads(report.read_text())
+    record["evaluation"]["successes"] += 1
+    report.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="differs from the run manifest"):
+        dagger.iterate(run)
+    assert not (run / "iteration_002").exists()
+
+
+def test_a_swapped_seed_episode_is_refused_even_though_it_is_self_consistent(seed_collection, tmp_path, monkeypatch):
+    import shutil
+    install_rules(monkeypatch)
+    collection, run = tmp_path / "seed", tmp_path / "run"
+    shutil.copytree(seed_collection, collection)
+    dagger.init(collection, run, EVAL)
+    first, second = (collection / "dataset/episodes" / ref["id"] for ref in aggregate(run)[:2])
+    for name in ("metadata.json", "episode.npz", "corrective.npz"):  # Payload and metadata swapped together.
+        shutil.copyfile(second / name, first / name)
+    Store(collection / "dataset").load_training_episode(first.name)  # The Store alone sees nothing wrong.
+    with pytest.raises(ValueError, match="differs from the run manifest"):
+        dagger.iterate(run)
+    assert len(manifest(run)["iterations"]) == 1
+
+
 @pytest.mark.parametrize("moment", ["before", "after"])
 def test_interruption_around_the_manifest_replacement(seed_collection, tmp_path, monkeypatch, moment):
     install_rules(monkeypatch)
