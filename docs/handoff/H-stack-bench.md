@@ -134,11 +134,15 @@ C:\Users\Khang\tmp\reach-public\build\venv-teleop\Scripts\python.exe -m pytest -
   - the real 64-row ledger read, a stack row and a latency row (no task_id) appended to a copy, with the real
     file's sha256 unchanged;
   - two rows differing only in task_id both eligible in `resume_numbers`.
-- Measured in a probe script, not a test:
-  - One StackBackend tick including StackTask takes 0.77 ms mean / 1.22 ms max (xlerobot_left) and 0.69 / 1.03 ms
-    (so101) over 50 ticks. The extra contact query does not threaten the 25 Hz budget (40 ms).
-  - A block placed on the base and left alone scores success at tick 13 (placed) or 14 (dropped from 3 mm) on both
-    arms, so MuJoCo holds a two-block stack with the bench friction and solver settings.
+- Measured by `.\.venv\Scripts\python.exe scripts\stack_probe.py` (committed; prints JSON), one run on the
+  G14 after the F1/F3 fixes. It is a probe, not a test:
+  - Wall clock of one StackBackend tick including StackTask, 50 ticks holding the reset pose on seed 0:
+    0.86 ms mean / 1.96 ms max (xlerobot_left) and 0.74 / 1.39 ms (so101). This varies between runs and machines,
+    and stays far below the 40 ms of a 25 Hz tick.
+  - Seed 1, `block` set on `base_block` offset (+2, -1) mm with 10 µm penetration, arm holding still: success at
+    tick 13 on both arms. Dropped from 3 mm: tick 14 on both arms. So MuJoCo holds a two-block stack with the bench
+    friction and solver settings. The earliest possible success is tick 12, which a different placement can reach
+    (QA measured tick 12 with its own placement).
 
 ## The TaskBackend contract
 
@@ -168,8 +172,8 @@ adds `stable_steps`), `finished`, `object_names`, `metadata()` (recorded as `sou
    stacked. The test holds a perfect stack for 20 ticks and gets no success, then releases and gets success on clean
    tick 12.
 2. *Why score in Python instead of extending the C++ Env?* Any C++ change alters the native contract hash and risks
-   the 0.0-difference equivalence of pick-and-place. A Python rule on MjData costs under 1.3 ms per tick, and the
-   C++ is not touched.
+   the 0.0-difference equivalence of pick-and-place. A Python rule on MjData adds about a millisecond per tick on this
+   machine (scripts/stack_probe.py), and the C++ is not touched.
 3. *How is legacy data without task_id classified?* Only by fingerprint. If every recorded model hash equals that
    robot's pick-and-place bench model, the task is pick_place. Anything else is refused, never guessed.
 
