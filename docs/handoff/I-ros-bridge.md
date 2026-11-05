@@ -1,10 +1,10 @@
 # Slice I: ROS 2 bridge (`xert_ros_bridge`)
 
-Branch `feat/i-ros-bridge`, from `integration/sim-mvp` @ 9115f43. Not
-pushed; integration pushes it and iterates on CI. **No ROS on the dev PC:
-the two rclpy nodes, the launch file, the launch test and the new `ros.yml`
-steps have never been executed.** Only the ROS-free core and its tests ran
-here.
+Branch `feat/i-ros-bridge`, from `integration/sim-mvp` @ 9115f43. Pushed
+by integration. **CI run 41997249908 at 1ea035d is green** (`ROS 2 Jazzy
+package`, 1m34s). The dev PC has no ROS, so the rclpy nodes, the launch
+file and the launch test have only ever run in that CI job (six runs, see
+"CI history"). The ROS-free core and its tests also run here.
 
 ## What changed and why
 
@@ -163,36 +163,100 @@ ros2 launch xert_ros_bridge bridge.launch.py clip:=/path/to/clip.json
   - the contract check: the README topic table (names, types, QoS) and the
     stamp sentence equal `core.COMMANDS`, `core.STATES` and
     `core.STAMP_RULE`;
+  - `replay_follower`, the launch test's per-stamp reference: on a
+    follower whose every tick is known (13 ms out of phase with the
+    bridge, commands arriving 0.5 ms late), a replay from two thirds of
+    its samples reproduces the measured poses to 1e-12;
   - with rclpy (skips here, runs in `ros.yml`): QoS profiles, `JointState`
     packing and stamp round trip, both node modules import.
 - `ros/xert_ros_bridge/test/test_bridge_launch.py` (`launch_testing`,
   `colcon test`): launches `bridge.launch.py` itself (imports its
   description and includes it with `use_rviz:=false`,
-  `wait_subscribers:=2`) with the same scripted clip. It checks the exact
-  topic set and the publisher/subscriber endpoints with their reliability
-  and durability (slice E's introspection approach); about 25 Hz commands
-  (median stamp spacing 40 ms +/- 5 ms), monotonic stamps, names in spec
-  order, at most 2 commands missing; the hold, return, rest stream; the
-  follower inside the position limits and reaching rest; NaN, missing
-  joint and future-stamped commands not moving the arm, then a
-  reordered-name valid stream moving it; more than 600 `/joint_states`
-  messages with the pose held; exit code 0 for both nodes (the bridge's
-  includes "no deadline abort"). Estimated about 30 s; not run yet.
+  `wait_subscribers:=2`) with the same scripted clip. Its assertions:
+  - setup: the test records `/joint_states` first (matched to the
+    follower and one state received) and only then subscribes to commands,
+    which releases the bridge; it waits for the first command and state;
+  - graph, each polled up to 10 s and then compared as a set: the exact
+    topic set; `/xert/joint_commands` published by `xert_bridge` only and
+    subscribed by the follower and the test, all reliable and volatile;
+    `/joint_states` published by the follower only, best effort and
+    volatile; `robot_state_publisher` subscribed to it;
+  - the bridge exits within 30 s; at most 2 of the expected commands are
+    missing; names in spec order; stamps strictly increasing; median
+    stamp spacing 40 ms +/- 5 ms, and median receive spacing 40 ms
+    +/- 10 ms; the command positions hold away from rest, return
+    monotonically and end at rest;
+  - `/joint_states`: names in spec order, inside the position limits; the
+    recording starts before the first command and holds at least 80% of
+    the follower ticks it spans; median stamp spacing 40 ms +/- 5 ms;
+    every sample within one period at the velocity limit
+    (`velocity_limits / control_hz`) of an offline `core.Follower` replay
+    over all received commands at the same tick stamps; the measured pose
+    reaches rest within 0.01 rad;
+  - NaN, missing-joint and future-stamped commands do not move the arm,
+    then a reordered-name valid stream does;
+  - more than 600 `/joint_states` messages, then the pose held;
+  - after shutdown: exit code 0 for both nodes (for the bridge that also
+    means no deadline abort).
 
-## What only CI can verify (nothing below has run)
+## What CI verified (run 41997249908 at 1ea035d)
 
-- That `colcon build` installs the package, its console scripts and its
-  launch file, and that colcon picks its pytest step.
-- Both nodes under rclpy: the signal-to-e-stop path, `wait_for_all_acked`,
-  the executor thread, QoS matching and rejection logging.
-- The launch test as a whole, its timing in the container, and the exact
-  topic set (`/rosout`, `/parameter_events` and the
-  `robot_state_publisher` topics are expected; anything else fails it).
-- The Jazzy Python environment: pip in the `ros:jazzy` image with
-  `--ignore-installed`, the `_reach_core` build against `/usr/bin/python3`,
-  the editable install, and that numpy 1.26.4 + mujoco 3.14.0 run XERT.
+- The job passed. `colcon test-result`: "Summary: 25 tests, 0 errors, 0
+  failures, 2 skipped". The `xert_ros` CTest entries passed 6/6. The
+  bridge launch test reported "1 passed in 29.12s". The rclpy step
+  (`tests/test_ros_bridge.py` with ROS sourced) passed as part of the job.
+- The Jazzy Python environment works: the lock installs into the system
+  Python 3.12, `_reach_core` builds against `/usr/bin/python3`, the
+  editable XERT install imports `CalibratedMapper`, and numpy 1.26.4 +
+  mujoco 3.14.0 run the bridge path.
+- `colcon build` installs both packages, the console scripts and the
+  launch file, and colcon runs the pytest step.
+- CI observations from the follower log and the test report (CI numbers,
+  not ledger rows):
+  - run 41995929551: "125 ticks in 5.0 s wall (25.0 Hz); fresh command on
+    121 ticks; accepted 121 (age at receipt p50 0.0005 s max 0.0010 s);
+    rejected {}"; test-side command age p50 0.0005 s, max 0.0008 s;
+  - run 41996812427: 129 of 129 follower ticks recorded, the window
+    spanning -0.038 s to +0.242 s around the first and last command;
+    measured max |state - rest| equals the commanded max |cmd - rest| on
+    every joint (gripper 0.3397 vs 0.3396 rad);
+  - both runs: "published 122 commands; last phase rest";
+  - run 41997249908: both nodes exit with code 0.
+
+## Still unverified
+
 - `--source webcam` is not run anywhere, CI included.
 - RViz is never started (rviz2 is skipped by rosdep).
+- The SIGINT/SIGTERM e-stop path of `xert_bridge`: in CI the bridge ends
+  its clip on its own, so the final e-stop command is covered only by the
+  ROS-free e-stop chain test.
+
+## CI history (six runs)
+
+1. Collection failed: `LaunchDescriptionSource` is not in
+   `launch.launch_description_sources` on Jazzy. Fixed by importing it from
+   `launch.launch_description_source` (be61a75), after checking every ROS
+   import against the jazzy-branch sources.
+2. 41978192618: the graph check ran once, before the test node had
+   discovered the follower's subscription (a DDS discovery race). Fixed by
+   polling endpoint sets (ecefaff).
+3. 41994577985: `xert_bridge` aborted at exit (SIGABRT, "terminate called
+   without an active exception"): an unjoined daemon spin thread while
+   `Executor.shutdown()` destroyed its guard condition. Fixed by a joined
+   `spin_once` thread and the order executor, node, context (dcbebdc). The
+   follower's measured excursion also fell short (0.093 rad).
+4. 41995929551: diagnostics added (5af027f) showed a 25 Hz follower with
+   fresh, sub-millisecond commands, so the gap was the test's measurement:
+   it recorded 59 states, starting after the gripper peak, because its
+   best-effort state subscription matched late. Fixed by recording
+   `/joint_states` before the bridge is released and by the per-stamp
+   replay check (ac3c6c0, 3b2a988, feb4cf4). The follower's summary also
+   logged after the context was gone; fixed by its own signal handling
+   (49434de). The transport-loss test, clock-drift comment and a test
+   comment were corrected in the same round (67918cb, feb21ef, ae15d0c).
+5. 41996812427: numpy 1.26.4's `assert_array_less` rejected a (6,) bound
+   against (129, 6) errors. Fixed with an explicit-shape bound (1ea035d).
+6. 41997249908: green.
 
 ## Swap in Daniel's node
 
@@ -250,7 +314,7 @@ does is Daniel's decision (see the open question below).
 - `README.md` ROS section: one line for `ros2 launch xert_ros_bridge
   bridge.launch.py clip:=<clip>` and the sim follower.
 - `docs/handoff/TASKS.md`: slice I row (bridge + follower + launch test;
-  CI pending at the pushed SHA).
+  CI green, run 41997249908 at 1ea035d).
 - `docs/handoff/E-xert-ros.md` "Still unverified": `ros.yml` now installs
   exec deps (rviz2 skipped) and starts `robot_state_publisher` in the
   bridge launch test.
