@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>xert_ros_bridge</name>
+  <version>0.1.0</version>
+  <description>XERT retargeting published as safety-checked /xert/joint_commands, and a MuJoCo sim follower that publishes /joint_states. No control law: the follower is a visualization stand-in.</description>
+  <maintainer email="84390611+mizuharaa@users.noreply.github.com">mizuharaa</maintainer>
+  <license>Apache-2.0</license>
+
+  <!-- XERT itself (numpy, mujoco, the native core) is not a rosdep key: CI installs it from
+       requirements-bridge-linux-lock.txt and the repo root (see .github/workflows/ros.yml). -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>xert_ros</exec_depend>
+
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

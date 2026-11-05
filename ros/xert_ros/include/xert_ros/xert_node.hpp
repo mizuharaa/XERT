@@ -41,21 +41,27 @@ public:
   //   - a command never reaches the arm without the safety layer: position,
   //     speed and acceleration limits from xert/spec/so101.yaml, as in
   //     xert/safety/limits.py SafetyController.step.
-  //   - a command is stale when now() - its capture time (header.stamp)
-  //     > stale_s = 0.2 s -> hold the current pose; once now() - the last
-  //     fresh capture > stale_s + hold_s (0.2 + 0.5 s) -> smooth return to
-  //     rest over return_s = 2.0 s. Defaults: SafetyController in
+  //   - header.stamp = generation time of the safety-checked command;
+  //     capture freshness is enforced upstream by the safety layer (the
+  //     sender's SafetyController already holds, returns and rests on stale
+  //     camera input and publishes those commands). A command is stale when
+  //     now() - header.stamp > stale_s = 0.2 s (late or lost transport) ->
+  //     hold the current pose; once now() - the last fresh command
+  //     > stale_s + hold_s (0.2 + 0.5 s) -> smooth return to rest over
+  //     return_s = 2.0 s. Defaults: SafetyController in
   //     xert/safety/limits.py:33; aging rule: xert/safety/watchdog.py:19-44.
   //   - never blocks longer than one period.
   void control_step();
 
   // TODO(daniel): subscription callback for xert/joint_commands.
   // Input:   a position-only JointState (radians, any joint order, names set)
-  //          whose header.stamp is the capture time of the human motion, on
-  //          the same clock as this node's now().
-  // Output:  stores the target plus header.stamp as its capture time for the
-  //          next control_step; nothing else. The receive time is not used:
-  //          staleness is now() - capture, as in xert/safety/watchdog.py:19-29.
+  //          whose header.stamp is the generation time of the safety-checked
+  //          command (capture freshness is enforced upstream by the safety
+  //          layer), on the same clock as this node's now().
+  // Output:  stores the target plus header.stamp as its generation time for
+  //          the next control_step; nothing else. The receive time is not
+  //          used: staleness is now() - header.stamp, as in
+  //          xert/safety/watchdog.py:19-29.
   // Invariants:
   //   - never forwards the command to the arm or publishes; control_step and
   //     the safety layer own that.
