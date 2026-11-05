@@ -170,7 +170,13 @@ class TestBridgeLaunch(unittest.TestCase):
         report = (f'max |cmd - rest| {commanded.round(4)}; max |state - rest| {measured.round(4)}; '
                   f'command age at receipt p50 {np.median(ages):.4f} s max {ages.max():.4f} s; '
                   f'/joint_states spacing p50 {np.median(np.diff(state_stamps)):.4f} s '
-                  f'max {np.diff(state_stamps).max():.4f} s over {len(self.states)} states')
+                  f'max {np.diff(state_stamps).max():.4f} s over {len(self.states)} states; '
+                  # Late start vs best-effort loss: contiguous stamps (max spacing one period) that begin
+                  # after the first command mean recording started late; gaps mean samples were dropped.
+                  f'states span {state_stamps[0] - stamps[0]:+.3f} .. {state_stamps[-1] - stamps[-1]:+.3f} s '
+                  f'around the first .. last command = '
+                  f'{round((state_stamps[-1] - state_stamps[0]) * SPEC.control_hz) + 1} follower ticks, '
+                  f'{len(state_stamps)} received')
         print(report, flush=True)
         # The follower is a 25 Hz node: its state stamps must be one control period apart.
         self.assertAlmostEqual(float(np.median(np.diff(state_stamps))), 1 / SPEC.control_hz, delta=.005, msg=report)
