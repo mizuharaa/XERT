@@ -31,6 +31,8 @@ def main():
     robots = ["xlerobot_left", "so101"]
     robot_help = "Bench arm (default xlerobot_left); SO-101 has no tuned scripted expert yet"
     collect.add_argument("--robot", choices=robots, help=robot_help)
+    task_help = "Bench task (task_id); stack refuses until the scripted stacking expert exists (TODO(daniel))"
+    collect.add_argument("--task", choices=["pick_place", "stack"], default="pick_place", help=task_help)
     train = commands.add_parser("train", help="Train on explicit episode IDs or a collection result JSON")
     train.add_argument("--episodes", nargs="+")
     train.add_argument("--collection", type=Path)
@@ -41,6 +43,7 @@ def main():
     evaluate.add_argument("--seed", type=int, default=10000)
     evaluate.add_argument("--config", default="{}")
     evaluate.add_argument("--robot", choices=robots, help=robot_help)
+    evaluate.add_argument("--task", choices=["pick_place", "stack"], default="pick_place", help=task_help)
     replay = commands.add_parser("replay", help="Re-run recorded actions and compare all observations")
     replay.add_argument("episode")
     replay.add_argument("--image", type=Path)
@@ -50,6 +53,9 @@ def main():
     smoke.add_argument("--horizon", type=int, default=600)
     smoke.add_argument("--model-type", choices=["baseline_mlp", "act"], default="baseline_mlp")
     args = parser.parse_args()
+    if getattr(args, "task", None) == "stack":  # Before anything is created: no data dir, no torch import.
+        from xert.tasks.stack_expert import NOT_TUNED
+        raise NotImplementedError(NOT_TUNED)
     if args.command == "export-bench":
         import numpy as np
         from .sim import ManipulationEnv, model_xml
