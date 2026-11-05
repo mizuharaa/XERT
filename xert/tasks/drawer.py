@@ -95,3 +95,65 @@ def drawer_scene(robot):
     model = spec.compile()
     model.geom_friction[:, 0] = 1.0
     return model, fingerprint, composition
+
+
+def initial_opening(seed):
+    """Seeded drawer.pos at reset, uniform in INITIAL_OPEN (metres)."""
+    return float(np.random.default_rng(seed).uniform(*INITIAL_OPEN))
+
+
+class DrawerTask:
+    """Scores one drawer episode from MjData after each control tick.
+
+    A tick is `open` when all three checks hold: (a) drawer.pos >= OPEN_M; (b) released: no robot contact on the
+    drawer body, whose geoms include the handle (the native rule's `!held`, cpp/src/env.cpp Env::step, as the stack
+    rule's (b)); (c) still: slide speed below SLIDE_SPEED. Success is SETTLE_TICKS consecutive open ticks; any other
+    tick, e.g. a dip below OPEN_M or a touch, resets the count. Failure is only the horizon. Contacts are read at
+    control ticks, not at the 20 physics substeps between them, like the native rule.
+    """
+    def __init__(self, model, horizon=HORIZON):
+        self.model, self.horizon = model, horizon
+        self.drawer, self.cabinet = model.body("drawer").id, model.body("cabinet").id
+        slide = model.joint("drawer_slide")
+        self.qpos, self.dof = slide.qposadr[0], slide.dofadr[0]
+        self.handle = model.geom("handle").id
+        self.steps = self.stable_steps = 0
+        self.finished = False
+
+    def held(self, data):
+        """Robot contact on the drawer (panels or handle). Contact geoms resolve to bodies; anything but the world
+        (table, floor) and the cabinet is the robot, as env.cpp counts `held`."""
+        bodies = self.model.geom_bodyid[np.stack([data.contact.geom1, data.contact.geom2], axis=1)]
+        return bool(any((b if a == self.drawer else a) not in (0, self.cabinet)
+                        for a, b in bodies if self.drawer in (a, b)))
+
+    def checks(self, data):
+        """The three conditions on one state, by name."""
+        return {"open": bool(data.qpos[self.qpos] >= OPEN_M), "released": not self.held(data),
+                "still": bool(abs(data.qvel[self.dof]) < SLIDE_SPEED)}
+
+    def step(self, data):
+        """Score the state after one control tick: the bench info keys (`lifted` is always False, nothing is lifted
+        in this task) plus drawer_open_fraction."""
+        if self.finished:
+            raise RuntimeError("episode finished; reset before stepping")
+        self.steps += 1
+        checks = self.checks(data)
+        self.stable_steps = self.stable_steps + 1 if all(checks.values()) else 0
+        success = self.stable_steps >= SETTLE_TICKS
+        self.finished = success or self.steps >= self.horizon
+        return {"success": success, "failure_reason": "timeout" if self.finished and not success else None,
+                "lifted": False, "steps": self.steps, "object_position": data.geom_xpos[self.handle].tolist(),
+                "object_in_robot_contact": not checks["released"], "stable_steps": self.stable_steps,
+                "drawer_open_fraction": float(data.qpos[self.qpos] / DRAWER_TRAVEL)}
+
+
+SUCCESS_RULE = {
+    "rule": "xert/tasks/drawer.py DrawerTask: SETTLE_TICKS consecutive control ticks with (a) drawer.pos >= open_m, "
+            "(b) no robot contact on the drawer body (handle included), (c) |slide speed| < slide_speed_m_s; "
+            "failure only at the horizon",
+    "settle_ticks": SETTLE_TICKS, "horizon": HORIZON, "open_m": OPEN_M, "travel_m": DRAWER_TRAVEL,
+    "slide_speed_m_s": SLIDE_SPEED, "initial_open_m": list(INITIAL_OPEN),
+    "sources": {"settle_ticks, released": "cpp/src/env.cpp Env::step", "horizon": "xle_workbench/sim.py:145",
+                "slide_speed_m_s": "xert/tasks/stack.py LINEAR_SPEED",
+                "open_m": "two thirds of travel, chosen here (slice K)"}}
