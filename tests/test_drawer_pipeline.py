@@ -159,3 +159,133 @@ def test_ledger_and_teleop_cli_accept_drawer(monkeypatch):
     args = parser.parse_args(["teleop", "--spec", "s", "--profile", "p", "--calibration", "c", "--output", "o",
                               "--task", "drawer"])
     assert args.task == "drawer" and set(teleop.TASK_TEXT) == set(teleop.SUCCESS_PROVENANCE) >= {"drawer"}
+
+
+# ---------------------------------------------------------------- Recordings (LeRobot environment).
+
+SPEC = ROOT / "xert/spec/xlerobot_left.yaml"
+PROFILE = ROOT / "configs/teleop/xlerobot_bench.json"
+SCRIPTED = {"kind": "scripted", "human_demonstrations": False, "generator": "tests/test_drawer_pipeline.py"}
+FRAMES = 5
+
+
+@pytest.fixture(scope="module")
+def recording(tmp_path_factory):
+    """One scripted-hand teleop episode on the drawer (xlerobot_left, bench seed 0)."""
+    pytest.importorskip("lerobot")
+    from scripts.record_scripted_runtime import ScriptedClock, ScriptedSource, scripted_frame
+    from xert.backends.base import task_backend
+    from xert.retarget.calibrate import CalibratedMapper, create_calibration
+    from xert.runtime import teleop
+    clock = ScriptedClock()
+    neutral = create_calibration(SPEC, PROFILE, scripted_frame(0, clock()), task_backend(load_spec(SPEC), 0, "drawer"))
+    keys = iter([" ", *[None] * (FRAMES - 1), " ", None, "\x1b"])
+    [episode] = teleop.run_session(ScriptedSource(clock), SPEC, tmp_path_factory.mktemp("drawer") / "session",
+                                   lambda b: CalibratedMapper(SPEC, PROFILE, neutral, b), provenance=SCRIPTED,
+                                   keys=lambda: next(keys), clock=clock, sleep=clock.sleep, task_id="drawer")
+    return episode
+
+
+def test_drawer_teleop_recording_round_trips_with_success_and_drawer_state(recording):
+    from xert.data.cameras import camera_model
+    from xert.data.recorder import load_runtime_dataset, verify_recording
+    from xert.runtime import teleop
+    from xert.tasks.drawer import initial_opening
+    assert verify_recording(recording)["frames"] == FRAMES
+    manifest = json.loads((recording / "xert_recording.json").read_text())
+    assert manifest["task_id"] == "drawer" and manifest["task"] == teleop.TASK_TEXT["drawer"]
+    bench = manifest["source"]["bench"]
+    assert bench["model_sha256"] == camera_model("xlerobot_left", "drawer")[1]
+    assert bench["success_rule"]["open_m"] == .08 and bench["success_rule"]["settle_ticks"] == 12
+    journal = [json.loads(line)["runtime"] for line in (recording / "xert_frames.jsonl").read_text().splitlines()]
+    assert {frame["task_id"] for frame in journal} == {"drawer"}
+    dataset = load_runtime_dataset(recording)
+    assert dataset.features["observation.environment_state"]["names"] == environment_names("drawer")
+    assert dataset.features["next.success"]["dtype"] == "bool"
+    assert not any(dataset[i]["next.success"].item() for i in range(FRAMES))
+    assert dataset[0]["observation.environment_state"][0].item() == np.float32(initial_opening(0))
+    assert dataset[0]["task"] == teleop.TASK_TEXT["drawer"]
+    del dataset
+
+
+def gl_render(*args, **kwargs):
+    from xert.data.cameras import render_cameras
+    try:
+        return render_cameras(*args, **kwargs)
+    except Exception as exc:
+        if "GL" in repr(exc) and not os.environ.get("CI"):
+            pytest.skip(f"No offscreen GL context: {exc!r}")
+        raise
+
+
+@pytest.fixture(scope="module")
+def rendered(recording, tmp_path_factory):
+    output = tmp_path_factory.mktemp("drawer-rendered") / "rendered"
+    gl_render(recording, output, size=64)
+    return output
+
+
+def test_render_cameras_export_and_quality_take_the_drawer_from_the_recording(recording, rendered, tmp_path,
+                                                                             monkeypatch):
+    from xert.__main__ import main
+    from xert.data.cameras import cameras
+    from xert.data.lerobot_io import export_lerobot
+    from xert.runtime import teleop
+    manifest = json.loads((rendered / "xert_cameras.json").read_text())
+    assert manifest["task_id"] == "drawer" and "drawer.pos" in manifest["reconstruction"]
+    errors = manifest["reconstruction_max_error"]
+    assert set(errors) == {"handle", "grasp", "drawer.pos"} and max(errors.values()) <= manifest["tolerance"]
+    assert {name: {key: camera[key] for key in definition} for name, camera in manifest["cameras"].items()
+            for definition in [cameras("xlerobot_left", "drawer")[name]]} == cameras("xlerobot_left", "drawer")
+    assert "cabinet front" in manifest["camera_placement"]
+    export_lerobot(recording, tmp_path / "export", task=teleop.TASK_TEXT["drawer"])
+    assert json.loads((tmp_path / "export/xert_recording.json").read_text())["task_id"] == "drawer"
+    monkeypatch.setattr(sys, "argv", ["xert", "quality", "--dataset", str(recording), "--output",
+                                      str(tmp_path / "quality")])
+    main()
+    assert json.loads((tmp_path / "quality/metrics.json").read_text())["task_id"] == "drawer"
+
+
+def test_image_act_describes_and_evaluates_the_drawer_with_live_renders(rendered, monkeypatch, tmp_path):
+    import torch
+    from lerobot.policies.act import modeling_act
+    from xert.data.cameras import cameras
+    from xert.eval import image_act, ledger
+    from xle_workbench.sim import ROBOTS as BENCH
+    data = image_act.describe([rendered])
+    assert data["task_id"] == "drawer" and data["camera"]["cameras"] == cameras("xlerobot_left", "drawer")
+    times = timed(monkeypatch)
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    features = {key: data["meta"]["features"][key] for key in ("observation.images.scene", "observation.images.wrist",
+                                                                "observation.state", "observation.environment_state")}
+    (checkpoint / image_act.METADATA).write_text(json.dumps({
+        "robot": "xlerobot_left", "task_id": "drawer", "seed": 0, "bench_seeds": data["bench_seeds"],
+        "source_kinds": data["source_kinds"], "action_units": data["action_units"], "git_dirty": False,
+        "dataset_sha256": data["dataset_sha256"], "features": features, "camera": data["camera"]}))
+    hold, seen = torch.tensor([BENCH["xlerobot_left"]["reset_pose"]], dtype=torch.float32), []
+
+    class Stub:  # Constant-action policy: no weights, no training.
+        config = None
+
+        def eval(self):
+            return self
+
+        def reset(self):
+            pass
+
+        def select_action(self, frame):
+            seen.append({key: tuple(value.shape) for key, value in frame.items()})
+            return hold
+
+    monkeypatch.setattr(modeling_act.ACTPolicy, "from_pretrained", lambda *args, **kwargs: Stub())
+    monkeypatch.setattr("lerobot.policies.factory.make_pre_post_processors",
+                        lambda *args, **kwargs: (lambda frame: frame, lambda action: action))
+    report = image_act.evaluate(checkpoint, [10000], tmp_path / "report.json")
+    assert report["task_id"] == "drawer" and report["n"] == 1 and report["successes"] == 0
+    assert report["trials"] == [{"seed": 10000, "success": False, "steps": 600, "failure_reason": "timeout"}]
+    assert report["ledger"].startswith("no rows: training data is ['scripted']") and ledger.read_rows() == []
+    np.testing.assert_allclose([after - before for before, after, _ in times], PERIOD, rtol=0, atol=1e-9)
+    assert len(times) == len(seen) == 600 and seen[0] == {
+        "observation.images.scene": (3, 64, 64), "observation.images.wrist": (3, 64, 64),
+        "observation.state": (6,), "observation.environment_state": (8,)}
