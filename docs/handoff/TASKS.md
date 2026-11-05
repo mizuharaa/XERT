@@ -15,6 +15,7 @@ Each slice has its own handoff in this folder: what changed, why, how to verify,
 | F1 | `xert map-from-calibration`: fills the SO-101 joint map from a LeRobot calibration + ≥2 still-pose recordings (files only) | `feat/f1-map-from-calibration` | Merged | [F1-map-from-calibration.md](F1-map-from-calibration.md) |
 | env | Real-arm environment: LeRobot `[feetech]` extra (STS3215 SDK, pyserial, deepdiff) in the teleop locks; `python -m scripts.hw_env_check` readiness report | on integration | Done 2026-11-04; teleop CI job green with the new lock | README "Python environments" |
 | G1 | Image-ACT train/evaluate scaffold on rendered `scene`/`wrist` (settings, loss and selection are TODO(daniel)) | `feat/g1-image-act` | Merged | [G1-image-act.md](G1-image-act.md) |
+| I | ROS 2 bridge: `xert_bridge` publishes safety-checked `/xert/joint_commands` (stamp = generation time); `xert_sim_follower` drives MuJoCo and publishes `/joint_states` (not a controller; `control_step` stays Daniel's) | `feat/i-ros-bridge` | Building (Codex plan review 3 rounds; I-11 applied as prescribed) | `I-ros-bridge.md` |
 | H | Block-stacking task bench: second task on both arms, Python-scored success with release of both blocks, shared `TaskBackend`, `task_id` through data and ledger (stacking expert is TODO(daniel)) | `feat/h-stack-bench` | Merged (Codex plan review 3 rounds; QA accepted; one intermediate commit, a51ce11, was red and fixed next commit; per-commit sweep unverified past 93fb8e7) | [H-stack-bench.md](H-stack-bench.md) |
 
 ## Daniel's TODO(daniel) queue
