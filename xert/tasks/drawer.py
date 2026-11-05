@@ -75,6 +75,9 @@ def drawer_spec(robot):
     drawer.add_geom(name="handle", type=mujoco.mjtGeom.mjGEOM_CYLINDER, pos=[HANDLE["standoff"], 0, z0],
                     quat=[np.sqrt(.5), np.sqrt(.5), 0, 0],  # Cylinder axis (local z) turned onto the cabinet's y.
                     size=[HANDLE["radius"], HANDLE["half_length"], 0], rgba=HANDLE_RGBA)
+    for sign in (1, -1):  # Two posts tie the handle ends to the front panel (drawer geoms: touching them is held).
+        _box(drawer, f"handle_post_{'left' if sign > 0 else 'right'}", (HANDLE["standoff"] / 2, sign * (
+            HANDLE["half_length"] - .006), z0), (HANDLE["standoff"] / 2, .004, .004), HANDLE_RGBA)
     spec.add_exclude(bodyname1="cabinet", bodyname2="drawer")  # Guided by the joint, never by shell contact.
     composition = {"bench_model_sha256": bench_sha256, "removed": ["block", "tray"], "placement": PLACEMENT[robot],
                    "shell": SHELL, "clearance_m": CLEARANCE, "drawer_depth_m": DRAWER_DEPTH, "handle": HANDLE,
