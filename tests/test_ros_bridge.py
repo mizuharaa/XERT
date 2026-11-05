@@ -56,6 +56,18 @@ def phase_runs(phases):
     return [p for i, p in enumerate(phases) if i == 0 or phases[i - 1] != p]
 
 
+def assert_hold_return_rest(commands, rest, hold_ticks=8):
+    """Command stream after camera loss, from positions alone (the launch test sees no phases):
+    identical commands away from rest (hold), then monotonically closer to rest (return), ending at rest."""
+    commands = np.asarray(commands)
+    distance = np.abs(commands - rest).max(axis=1)
+    same = np.r_[False, np.all(commands[1:] == commands[:-1], axis=1)]
+    hold = next(i for i in range(hold_ticks, len(commands))
+                if same[i - hold_ticks + 1:i + 1].all() and distance[i] > .1)
+    assert np.all(np.diff(distance[hold:]) <= 1e-9)
+    np.testing.assert_allclose(commands[-1], rest, atol=1e-9)
+
+
 def test_hold_commands_without_frames_carry_generation_stamps(spec, tmp_path):
     mapper = SimpleNamespace(map=lambda f: spec.rest + .05)
     # First read returns None: the scripted clip's landmarks finish 5 ms after capture.
@@ -203,7 +215,7 @@ def test_clip_chain_follower_executes_hold_return_rest(spec, tmp_path, estop):
         assert phase_runs(phases) == ["hold", "live", "hold", "return", "estop"]
     else:
         assert phase_runs(phases) == ["hold", "live", "hold", "return", "rest"]
-        np.testing.assert_allclose(commands[-1], spec.rest, atol=1e-9)
+        assert_hold_return_rest(commands, spec.rest)
         # Measured sim pose at rest: 0.6 mrad worst joint when written; 0.01 rad leaves headroom.
         np.testing.assert_allclose(follower.backend.read_state().q, spec.rest, atol=.01)
     # The bridge has exited: the follower keeps running (no horizon) and holds indefinitely.

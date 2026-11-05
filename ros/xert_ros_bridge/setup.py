@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
+    extras_require={'test': ['pytest']},  # colcon test picks its pytest step from this
     zip_safe=True,
     maintainer='mizuharaa',
     maintainer_email='84390611+mizuharaa@users.noreply.github.com',
