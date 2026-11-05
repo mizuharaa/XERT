@@ -229,6 +229,14 @@ a measurement yet. The task list and each slice's handoff are in
   limits) from the LeRobot calibration file and at least two still-pose
   recordings with asserted sim angles. It reads files only and never opens the
   bus. `max_speed`/`max_accel` stay `TBD` for the owner to choose.
+- **Block-stacking task (slice H).** `xert teleop --task stack` runs a second
+  task on either arm: place `block` on `base_block`. Success is scored in
+  Python (`xert/tasks/stack.py`): 12 ticks with the blocks in contact, both
+  released by the robot and resting, within the stated height, offset and speed
+  bounds. Recordings, cameras, the quality gate, the P5.3 harness and image-ACT
+  carry a `task_id` so stack and pick-and-place data never pool. The scripted
+  stacking expert is a `TODO(daniel)`, so scripted collect/evaluate refuse
+  `--task stack` until it exists. No stacking result has been measured.
 - **Image-ACT scaffold (slice G1).** `python -m xert image-act train|evaluate`
   trains official LeRobot ACT on rendered `scene`/`wrist` images and evaluates
   it on the bench, rendering the cameras live each tick. Every training choice
