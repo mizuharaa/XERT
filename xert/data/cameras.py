@@ -4,6 +4,7 @@ Each frame's scene is rebuilt from its recorded joint positions and block pose (
 qpos: the tray is static), so live teleop never renders and never risks a control deadline.
 Images are simulator renders, not real camera data.
 """
+from functools import cache
 import hashlib
 import importlib.metadata
 import io
@@ -16,6 +17,7 @@ import tempfile
 import numpy as np
 
 from xert.data.lerobot_export import _publish
+from xert.tasks import check_task_id
 from xle_workbench.storage import atomic_json, sha256
 
 # Per bench robot (xle_workbench.sim ROBOTS). Scene cameras are in the world frame, wrist cameras in a gripper body
@@ -88,16 +90,31 @@ def _so101_spec():
     return spec, hashlib.sha256(xml.encode() + json.dumps(source, sort_keys=True).encode()).hexdigest()
 
 
-def camera_model(robot="xlerobot_left"):
-    """(model, recorded-model fingerprint): the robot's bench model with both cameras added in memory."""
+def _bench_spec(robot):
+    """(uncompiled MjSpec, recorded-model fingerprint) of a robot's pick-and-place bench (ManipulationEnv's model)."""
     import mujoco
     from xle_workbench.sim import ASSETS, model_fingerprint, model_xml, verified_source
     if robot == "so101":
-        spec, fingerprint = _so101_spec()
+        return _so101_spec()
+    source = verified_source(ASSETS)  # Vendored files are checksummed and only read.
+    xml = model_xml()
+    return mujoco.MjSpec.from_string(xml), model_fingerprint(xml, source)
+
+
+@cache
+def bench_fingerprint(robot):
+    """The pick-and-place bench model fingerprint that recordings of `robot` carry (source.bench.model_sha256)."""
+    return _bench_spec(robot)[1]
+
+
+def camera_model(robot="xlerobot_left", task_id="pick_place"):
+    """(model, recorded-model fingerprint): the robot's bench (or stack) model with both cameras added in memory."""
+    import mujoco
+    if check_task_id(task_id) == "stack":
+        from xert.tasks.stack import stack_spec
+        spec, fingerprint, _ = stack_spec(robot)
     else:
-        source = verified_source(ASSETS)  # Vendored files are checksummed and only read.
-        xml = model_xml()
-        spec, fingerprint = mujoco.MjSpec.from_string(xml), model_fingerprint(xml, source)
+        spec, fingerprint = _bench_spec(robot)
     for name, camera in CAMERAS[robot].items():
         if "model_camera" in camera:
             continue
