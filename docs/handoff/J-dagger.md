@@ -16,8 +16,13 @@ happened and no DAgger number exists.** The mixing rule, the stopping rule and t
 - **`xert/eval/dagger.py`**, CLI `python -m xert dagger init | iterate`.
   - **`init --collection <dir> --output <fresh run dir> [--eval-seeds ...]`** (review J-02). The collection is
     the P1.2 format (`collection.json` beside a `dataset/` Store). Every seed episode must have the current
-    contract, `pipeline.contract(env.metadata())`, for the pick-and-place bench env (`xlerobot_left`). That
-    check reads metadata first, so a stale collection is refused before any payload is decoded. Then each
+    contract, `pipeline.contract(env.metadata())`, for the pick-and-place bench env (`xlerobot_left`). The
+    contract is recomputed from each episode's `simulation` metadata, not trusted from its stored
+    `contract_sha256`. Each episode's `config` must also equal the bench env's config (robot, friction,
+    delay_steps, horizon, object_position_bounds), because the contract omits friction, delay and bounds while
+    rollouts and evaluation use the bench config; the error names the differing keys. Owner decision: randomized
+    seed data would be a separate decision and would need the same randomization in the rollouts. These checks
+    read metadata first, so a stale collection is refused before any payload is decoded. Then each
     episode loads through `load_training_episode` (payload hash, labels, alignment). Seeds must be distinct and
     must not overlap the held-out seeds (the P5.3 check; default 10000-10029). `init` writes
     `iteration_000/seed.json` (collection path, `collection.json` sha256, per-episode payload and label hashes)
@@ -167,9 +172,8 @@ What each test shows (`tests/test_dagger.py` unless named):
 
 - `dagger_action` gets no RNG or episode seed. A stochastic beta-mixing rule (classic DAgger) needs the seed in
   the signature, or it has to be deterministic in (iteration, step). Changing the signature is your call.
-- `init` checks the contract, which covers horizon, model, names and implementation but not friction or object
-  bounds. A seed collection recorded under a non-default `environment` would pass while rollouts use the default
-  bench. The real `configs/recovery_demos.json` uses `{}` (default). Should `init` also require the default config?
+- Resolved (owner default = yes): `init` requires the bench config as well as the contract. The real
+  `configs/recovery_demos.json` uses `{}`, which is the bench default.
 
 ## Integration lines (not edited here)
 

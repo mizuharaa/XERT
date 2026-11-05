@@ -187,6 +187,11 @@ def init(collection, output, eval_seeds=EVAL_SEEDS):
                 f"(implementation_sha256 {record.get('simulation', {}).get('implementation_sha256')}); the current "
                 f"core is {current} (implementation_sha256 {env.implementation_sha256}). "
                 f"Recollect on the current core: {RECOLLECT}")
+        config = record.get("config") or {}
+        differing = sorted(key for key in set(config) | set(env.config) if config.get(key) != env.config.get(key))
+        if differing:  # The contract omits friction, delay and bounds; rollouts and evaluation use the bench config.
+            raise ValueError(f"Seed episode {record.get('id')} config differs from the bench in {differing}; "
+                             f"recollect with the bench config: {RECOLLECT}")
         if record.get("source") != SEED_SOURCE:
             raise ValueError(f"Seed episode {record.get('id')} is {record.get('source')!r}, not {SEED_SOURCE!r}")
     for identifier in ids:

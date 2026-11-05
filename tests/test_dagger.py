@@ -135,6 +135,17 @@ def test_init_recomputes_the_contract_instead_of_trusting_the_stored_hash(seed_c
     assert not (tmp_path / "run").exists()
 
 
+def test_init_refuses_seed_episodes_recorded_under_another_bench_config(seed_collection, tmp_path):
+    def other_friction(record):  # Friction is outside the contract hash, so only the config check sees this.
+        record["config"]["friction"] = .5
+        return record
+
+    edited = edited_copy(seed_collection, tmp_path / "edited", other_friction)
+    with pytest.raises(ValueError, match=r"config differs from the bench in \['friction'\]"):
+        dagger.init(edited, tmp_path / "run", EVAL)
+    assert not (tmp_path / "run").exists()
+
+
 def test_init_refuses_evaluation_seeds_inside_the_demonstrations(seed_collection, tmp_path):
     with pytest.raises(ValueError, match="overlap"):
         dagger.init(seed_collection, tmp_path / "run", [101, 10000])
