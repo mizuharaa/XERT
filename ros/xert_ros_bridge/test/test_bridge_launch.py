@@ -80,7 +80,13 @@ class TestBridgeLaunch(unittest.TestCase):
         cls.executor = SingleThreadedExecutor()
         cls.executor.add_node(cls.node)
         cls.commands, cls.states = [], []
-        cls.node.create_subscription(JointState, COMMANDS[0], cls.commands.append, qos(COMMANDS))
+        cls.command_times = []
+
+        def on_command(msg):
+            cls.command_times.append(time.monotonic_ns())
+            cls.commands.append(msg)
+
+        cls.node.create_subscription(JointState, COMMANDS[0], on_command, qos(COMMANDS))
         cls.node.create_subscription(JointState, STATES[0], cls.states.append, qos_profile_sensor_data)
         threading.Thread(target=cls.executor.spin, daemon=True).start()
 
@@ -93,8 +99,18 @@ class TestBridgeLaunch(unittest.TestCase):
     def endpoints(self, topic, publishers):
         info = (self.node.get_publishers_info_by_topic(topic) if publishers else
                 self.node.get_subscriptions_info_by_topic(topic))
-        return sorted((i.node_name, i.topic_type, i.qos_profile.reliability, i.qos_profile.durability)
-                      for i in info)
+        return {(i.node_name, i.topic_type, i.qos_profile.reliability, i.qos_profile.durability)
+                for i in info}
+
+    def assertEndpoints(self, topic, publishers, expected, key=lambda e: e, timeout=10.):
+        """Graph discovery lags in each process: poll until the endpoint set is complete, then compare sets.
+
+        No spin_once here: the class executor already spins this node on its own thread, and the graph
+        cache rmw fills is read without spinning.
+        """
+        wait_for(lambda: {key(e) for e in self.endpoints(topic, publishers)} >= expected, timeout)
+        self.assertEqual({key(e) for e in self.endpoints(topic, publishers)}, expected,
+                         f'{topic} {"publishers" if publishers else "subscriptions"} after {timeout} s')
 
     def latest(self):
         return np.array(self.states[-1].position)
@@ -103,17 +119,22 @@ class TestBridgeLaunch(unittest.TestCase):
         node, rest = self.node, SPEC.rest
         reliable, best_effort = ReliabilityPolicy.RELIABLE, ReliabilityPolicy.BEST_EFFORT
         volatile = DurabilityPolicy.VOLATILE
+        # Start after discovery: the bridge publishes only once its publisher matched both command
+        # subscribers (wait_subscribers:=2), and the follower has published at least one state.
         self.assertTrue(wait_for(lambda: self.commands, 30), 'no command on /xert/joint_commands')
+        self.assertTrue(wait_for(lambda: self.states, 10), 'no state on /joint_states')
 
         # Graph: exactly the expected topics, endpoints and QoS (slice E's introspection approach).
+        # The bridge's publisher first: it lives only for the clip plus its return-to-rest tail.
+        self.assertEndpoints(COMMANDS[0], True, {('xert_bridge', COMMANDS[1], reliable, volatile)})
+        self.assertEndpoints(COMMANDS[0], False, {('bridge_launch_test', COMMANDS[1], reliable, volatile),
+                                                  ('xert_sim_follower', COMMANDS[1], reliable, volatile)})
+        self.assertEndpoints(STATES[0], True, {('xert_sim_follower', STATES[1], best_effort, volatile)})
+        # robot_state_publisher's own QoS choice is its business: check that it listens, by name.
+        self.assertEndpoints(STATES[0], False, {'robot_state_publisher', 'bridge_launch_test'},
+                             key=lambda e: e[0])
         self.assertTrue(wait_for(lambda: {n for n, _ in node.get_topic_names_and_types()} == EXPECTED_TOPICS,
                                  10), node.get_topic_names_and_types())
-        self.assertEqual(self.endpoints(COMMANDS[0], True), [('xert_bridge', COMMANDS[1], reliable, volatile)])
-        self.assertEqual(self.endpoints(COMMANDS[0], False), [
-            ('bridge_launch_test', COMMANDS[1], reliable, volatile),
-            ('xert_sim_follower', COMMANDS[1], reliable, volatile)])
-        self.assertEqual(self.endpoints(STATES[0], True), [('xert_sim_follower', STATES[1], best_effort, volatile)])
-        self.assertIn('robot_state_publisher', [e[0] for e in self.endpoints(STATES[0], False)])
 
         # The clip runs to its end, then the safety layer's hold -> return -> rest; no deadline abort.
         proc_info.assertWaitForShutdown(process=bridge, timeout=30)
@@ -124,7 +145,11 @@ class TestBridgeLaunch(unittest.TestCase):
         self.assertTrue(all(list(m.name) == NAMES and len(m.position) == len(NAMES) for m in commands))
         stamps = np.array([m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in commands])
         self.assertTrue(np.all(np.diff(stamps) > 0), 'stamps not monotonic')
+        # Rate from generation stamps, which discovery cannot shift; the receive-side rate is taken over
+        # the stream after its first command, so it also excludes the discovery wait.
         self.assertAlmostEqual(float(np.median(np.diff(stamps))), 1 / SPEC.control_hz, delta=.005)
+        received = np.array(self.command_times[1:len(commands)]) * 1e-9
+        self.assertAlmostEqual(float(np.median(np.diff(received))), 1 / SPEC.control_hz, delta=.01)
         positions = np.array([m.position for m in commands])
         assert_hold_return_rest(positions, rest)
 
