@@ -49,7 +49,7 @@ happened and no DAgger number exists.** The mixing rule, the stopping rule and t
        `pipeline.wilson` gives the interval. The results go to `report.json`.
     - `should_stop(history)` runs before every iteration, on the reports of the completed ones.
   - **Until the stubs exist**, `iterate` stops with `DAgger mixing rule not chosen (TODO(daniel))` before it
-    writes anything. It does this by calling `dagger_action` once on zero actions (`dagger.py:225`). `init`
+    writes anything. It does this by calling `dagger_action` once on zero actions (`dagger.py:232`). `init`
     works now.
 - **CLI**: `xert/__main__.py` registers `dagger`.
 - **CI**: `tests/test_dagger_lerobot.py` added to the `lerobot` and `teleop` jobs in `.github/workflows/optional.yml`.
@@ -96,7 +96,7 @@ happened and no DAgger number exists.** The mixing rule, the stopping rule and t
 ## How to verify
 
 ```
-.\.venv\Scripts\python.exe -m pytest -q tests/test_dagger.py              # 10 passed, 2 xfailed
+.\.venv\Scripts\python.exe -m pytest -q tests/test_dagger.py              # 15 passed, 2 xfailed
 .\.venv-lerobot\Scripts\python.exe -m pytest -q tests/test_dagger_lerobot.py tests/test_lerobot_export.py tests/test_lerobot_io.py
 .\.venv\Scripts\python.exe -m xert dagger init --collection results/p1.2/recovery_integrated --output build/dagger_check   # refused (473fff47)
 ```
@@ -132,6 +132,13 @@ What each test shows (`tests/test_dagger.py` unless named):
   `manifest.json`. "before": the manifest is unchanged and the retry adds iteration 1 once. "after": iteration 1
   is committed, and the next `iterate` runs iteration 2 without touching iteration 1's files. In both cases every
   referenced payload still loads with its hash.
+- `test_a_manifest_changed_during_the_iteration_is_not_overwritten`: another write to `manifest.json` between
+  staging and commit is refused, and the attempt stays unreferenced.
+- `test_a_tampered_committed_report_is_refused`, `test_a_swapped_seed_episode_is_refused_even_though_it_is_self_consistent`:
+  the manifest's report and episode hashes catch edits the Store alone accepts.
+- `test_init_recomputes_the_contract_instead_of_trusting_the_stored_hash`,
+  `test_init_refuses_seed_episodes_recorded_under_another_bench_config`: forged simulation metadata and a
+  non-bench friction are refused at `init`.
 - `tests/test_dagger_lerobot.py`: P2.1 export writes `action` = corrective and `xert.executed_action` = executed
   for DAgger episodes. The slice C import restores both streams bit-exactly and keeps `source` and the `dagger`
   provenance.
@@ -146,8 +153,8 @@ What each test shows (`tests/test_dagger.py` unless named):
 - **Data weighting:** there is none. `learning.train` fits every aggregated transition once. Weighting would be a
   trainer change (CORE: policy training logic), so no stub was added for it.
 - Done tests (strict xfail, `raises=(NotImplementedError, AssertionError)`):
-  - `tests/test_dagger.py:267` `test_daniel_rules_exist_and_return_valid_values`;
-  - `tests/test_dagger.py:280` `test_daniel_two_iterations_grow_the_aggregate_by_the_rollout_count`. It runs YOUR
+  - `tests/test_dagger.py:351` `test_daniel_rules_exist_and_return_valid_values`;
+  - `tests/test_dagger.py:364` `test_daniel_two_iterations_grow_the_aggregate_by_the_rollout_count`. It runs YOUR
     settings on a 3-episode fixture, so big epochs or rollout counts make it slow. It is a harness check with no
     performance bar. Pre-register the success target before the first real iteration.
 
@@ -170,7 +177,7 @@ What each test shows (`tests/test_dagger.py` unless named):
    at any point leaves a state that a retry can reason about.
 3. **Why refuse the checked-in P1.2 collection instead of training on it?** Its contract hash names an older
    simulator. Pooling it with new rollouts would mix two physics implementations under one policy, and
-   `train_model` would refuse anyway. Recollecting is cheap and keeps the contract honest.
+   `train_model` would refuse anyway. Recollecting keeps every episode under one contract.
 
 ## Open questions
 
