@@ -36,9 +36,12 @@ image-ACT scaffold without rewriting them. The plan is `PLAN.md` section H (Code
 - **Success, in Python** (`StackTask`, scored on `MjData` after every 25 Hz tick). A tick is *stacked* when all of
   these hold:
   - (a) contact between `block` and `base_block`, with contact geoms resolved to bodies;
-  - (b) no robot contact on `block`. "Robot" means any body other than the world (table, floor), the tray and
-    base_block, the same definition as env.cpp's `held`. A held tick resets the count, so the robot touches the
-    block at none of the window's ticks;
+  - (b) no robot contact on `block` or on `base_block`. "Robot" means any body other than the world (table,
+    floor), the tray and the other block, the same definition as env.cpp's `held`. A held tick resets the count, so
+    the robot touches neither block at any of the window's ticks;
+  - (b') `base_block` rests on the table: its bottom from 1 mm below to 5 mm above the table top. Without (b) on
+    the base and (b'), a base held in the air with the block on top scored as stacked on both arms (QA finding F3;
+    tested negative and positive);
   - (c) block bottom from 1 mm below to 5 mm above the base_block top, from the box corners, so a tilted block is
     measured correctly. Resting contact penetrates −0.207 mm (QA's measurement); anything deeper than 1 mm is
     interpenetration and does not count (tested at 4 mm below);

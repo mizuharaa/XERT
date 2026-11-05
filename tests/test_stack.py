@@ -42,6 +42,16 @@ def place(model, base, block, block_velocity=(0,) * 6, at_grasp=False, arm=None)
     return data
 
 
+def ik_grasp(robot, model, target, base, block):
+    """Arm pose (joint name -> radians) putting the grasp site at `target`, by the existing generalized IK
+    (xert.retarget.ik.solve, as scripts/stack_reach.py); the jaws then touch whatever block sits there."""
+    from xert.retarget.ik import solve
+    from xert.spec import load_spec
+    spec = load_spec(ROOT / f"xert/spec/{robot}.yaml")
+    q = solve(spec, model, place(model, base, block), {"grasp": np.asarray(target)}, iterations=200)
+    return dict(zip(spec.joint_names, q))
+
+
 BASE = np.array([.24, .03, .096])
 STACKED = BASE + [0, 0, HEIGHT - 1e-5]  # 10 um penetration so the resting contact exists.
 
@@ -95,8 +105,7 @@ def test_both_arms_reach_both_spawn_rectangles_at_stacking_heights():
 def test_each_check_on_hand_built_states(scene):
     _, model, _, _ = scene
     task = StackTask(model)
-    assert task.checks(place(model, BASE, STACKED)) == dict.fromkeys(
-        ("contact", "released", "gap", "centred", "still"), True)
+    assert task.checks(place(model, BASE, STACKED)) == dict.fromkeys(("contact", "released", "base_on_table", "gap", "centred", "still"), True)
     apart = task.checks(place(model, BASE, [.24, -.03, .096]))
     assert not apart["contact"] and apart["released"] and not apart["gap"]
     assert not task.checks(place(model, BASE, STACKED + [.009, 0, 0]))["centred"]  # 9 mm > 8 mm half width.
@@ -110,6 +119,9 @@ def test_each_check_on_hand_built_states(scene):
     assert not task.checks(place(model, BASE, STACKED, [0, 0, 0, 0, .11, 0]))["still"]
     held = task.checks(place(model, None, None, at_grasp=True))
     assert held["contact"] and not held["released"]
+    floating = task.checks(place(model, BASE + [0, 0, .05], STACKED + [0, 0, .05]))  # Base in mid-air, untouched.
+    assert floating["released"] and not floating["base_on_table"]
+    assert not task.checks(place(model, BASE - [0, 0, .004], STACKED - [0, 0, .004]))["base_on_table"]
 
 
 def scores(model, states, horizon=600):
@@ -130,7 +142,8 @@ def test_a_held_perfect_stack_never_succeeds_until_released(scene):
     ticks, is."""
     from xle_workbench.sim import ROBOTS
     robot, model, _, _ = scene
-    held = place(model, None, None, at_grasp=True)
+    # A perfect stack on the table, the grasp site at the block centre: the jaws touch `block`.
+    held = place(model, BASE, STACKED, arm=ik_grasp(robot, model, STACKED, BASE, STACKED))
     task = StackTask(model)
     for _ in range(20):
         info = task.step(held)
@@ -138,11 +151,24 @@ def test_a_held_perfect_stack_never_succeeds_until_released(scene):
     # Release: the same block poses, the arm back at its bench reset pose, clear of both blocks.
     released = place(model, held.xpos[model.body("base_block").id], held.xpos[model.body("block").id],
                      arm=dict(zip(ROBOTS[robot]["joints"], ROBOTS[robot]["reset_pose"])))
-    assert StackTask(model).checks(released) == dict.fromkeys(("contact", "released", "gap", "centred", "still"), True)
+    assert StackTask(model).checks(released) == dict.fromkeys(("contact", "released", "base_on_table", "gap", "centred", "still"), True)
     infos = [task.step(released) for _ in range(SETTLE_TICKS)]
     assert [i["success"] for i in infos] == [False] * (SETTLE_TICKS - 1) + [True] and task.finished
     with pytest.raises(RuntimeError, match="episode finished"):
         task.step(released)
+
+
+def test_a_base_held_in_the_air_with_the_block_on_top_never_succeeds(scene):
+    """QA F3: the gripper lifting base_block with block resting on it is no stack; both blocks on the table is."""
+    robot, model, _, _ = scene
+    base, block = BASE + [0, 0, .06], STACKED + [0, 0, .06]
+    lifted = place(model, base, block, arm=ik_grasp(robot, model, base, base, block))
+    checks = StackTask(model).checks(lifted)
+    assert checks["contact"] and not checks["released"] and not checks["base_on_table"]
+    task = StackTask(model)
+    assert not any(task.step(lifted)["success"] for _ in range(20)) and task.stable_steps == 0
+    on_table = place(model, BASE, STACKED)
+    assert [task.step(on_table)["success"] for _ in range(SETTLE_TICKS)] == [False] * (SETTLE_TICKS - 1) + [True]
 
 
 def test_failures_off_table_and_horizon(scene):
