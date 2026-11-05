@@ -80,10 +80,13 @@ class TestBridgeLaunch(unittest.TestCase):
         cls.executor = SingleThreadedExecutor()
         cls.executor.add_node(cls.node)
         cls.commands, cls.states = [], []
-        cls.command_times = []
+        cls.command_times, cls.command_ages = [], []
 
         def on_command(msg):
             cls.command_times.append(time.monotonic_ns())
+            # Age at receipt on this node's ROS clock: the follower judges freshness the same way.
+            stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
+            cls.command_ages.append(cls.node.get_clock().now().nanoseconds - stamp)
             cls.commands.append(msg)
 
         cls.node.create_subscription(JointState, COMMANDS[0], on_command, qos(COMMANDS))
@@ -158,7 +161,23 @@ class TestBridgeLaunch(unittest.TestCase):
         self.assertTrue(all(list(m.name) == NAMES for m in self.states))
         self.assertTrue(np.all(states >= SPEC.position_limits[:, 0] - 1e-6) and
                         np.all(states <= SPEC.position_limits[:, 1] + 1e-6))
-        self.assertGreater(np.abs(states - rest).max(), .1)
+        # Diagnostics first, so a failure below says which side lost motion: the follower's tick rate
+        # (header stamps of /joint_states) or the command ages it judged freshness on.
+        commanded = np.abs(positions - rest).max(axis=0)
+        measured = np.abs(states - rest).max(axis=0)
+        ages = np.array(self.command_ages[:len(commands)]) * 1e-9
+        state_stamps = np.array([m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in self.states])
+        report = (f'max |cmd - rest| {commanded.round(4)}; max |state - rest| {measured.round(4)}; '
+                  f'command age at receipt p50 {np.median(ages):.4f} s max {ages.max():.4f} s; '
+                  f'/joint_states spacing p50 {np.median(np.diff(state_stamps)):.4f} s '
+                  f'max {np.diff(state_stamps).max():.4f} s over {len(self.states)} states')
+        print(report, flush=True)
+        # The follower is a 25 Hz node: its state stamps must be one control period apart.
+        self.assertAlmostEqual(float(np.median(np.diff(state_stamps))), 1 / SPEC.control_hz, delta=.005, msg=report)
+        # It must reproduce the commanded excursion. Same limits as the bridge's limiter, so the only slack is
+        # phase: at most one period at the velocity limit between a bridge tick and the follower tick.
+        np.testing.assert_array_less(np.abs(measured - commanded), SPEC.velocity_limits / SPEC.control_hz,
+                                     err_msg=report)
         self.assertTrue(wait_for(lambda: np.abs(self.latest() - rest).max() < .01, 5), self.latest())
 
         # Malformed commands are rejected; a reordered valid stream proves the subscription is live.
