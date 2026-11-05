@@ -1,4 +1,4 @@
-"""Terminal teleoperation on a bench task (pick_place or stack): one LeRobot v3 dataset per kept episode."""
+"""Terminal teleoperation on a bench task (xert.tasks.TASKS): one LeRobot v3 dataset per kept episode."""
 import hashlib
 import queue
 import shutil
@@ -13,9 +13,11 @@ from xert.spec import load_spec
 
 TASK = "Pick up the orange block and place it in the green tray"
 # LeRobot `task` descriptions per task_id; task_id itself goes to the manifest and the per-frame journal.
-TASK_TEXT = {"pick_place": TASK, "stack": "Pick up the orange block and stack it on the blue block"}
+TASK_TEXT = {"pick_place": TASK, "stack": "Pick up the orange block and stack it on the blue block",
+             "drawer": "Pull the drawer open by its handle, then let go"}
 SUCCESS_PROVENANCE = {"pick_place": "native bench contact rule (cpp/src/env.cpp Env::step)",
-                      "stack": "Python stack rule (xert/tasks/stack.py StackTask)"}
+                      "stack": "Python stack rule (xert/tasks/stack.py StackTask)",
+                      "drawer": "Python drawer rule (xert/tasks/drawer.py DrawerTask)"}
 KEYS = "Space starts/stops an episode, d discards it, Esc is e-stop and quit"
 
 

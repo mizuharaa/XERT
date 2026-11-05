@@ -9,6 +9,8 @@ import re
 import subprocess
 import uuid
 
+from xert.tasks import TASKS
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -59,8 +61,8 @@ def validate_row(row: dict) -> None:
         raise ValueError("A reference_backend row needs backend mujoco, reference_backend so101_hw, import_sha256, "
                          "calibration_sha256 and robot_id")
     # Optional (slice H): rows without it (history, latency, IK) stay valid; task-specific writers always set it.
-    if "task_id" in row and row["task_id"] not in ("pick_place", "stack"):
-        raise ValueError("Ledger task_id, when present, must be pick_place or stack")
+    if "task_id" in row and row["task_id"] not in TASKS:
+        raise ValueError(f"Ledger task_id, when present, must be one of {TASKS}")
     for name in ("slice", "experiment", "embodiment", "metric", "config_path", "notes"):
         if not isinstance(row[name], str) or not row[name].strip():
             raise ValueError(f"Ledger {name} must be nonempty text")

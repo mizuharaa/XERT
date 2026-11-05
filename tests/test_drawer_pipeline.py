@@ -95,3 +95,67 @@ def test_drawer_cameras_override_only_the_scene_camera_and_keep_the_pinned_ones(
         assert cameras(robot) == cameras(robot, "stack") == CAMERAS[robot]
         drawer = cameras(robot, "drawer")
         assert drawer["wrist"] == CAMERAS[robot]["wrist"] and drawer["scene"] != CAMERAS[robot]["scene"]
+
+
+# ---------------------------------------------------------------- Harnesses and callers (no LeRobot).
+
+class ConstantPolicy:
+    """Holds one normalized action every tick (the gate harness's policy interface)."""
+    def __init__(self, action):
+        self.action, self.inputs = np.asarray(action, dtype=np.float32), []
+
+    def reset(self):
+        self.inputs.clear()
+
+    def act(self, observation):
+        self.inputs.append(observation)
+        return self.action
+
+
+def timed(monkeypatch):
+    """Record (sim time before, after, t_cmd) of every DrawerBackend step taken through the harnesses."""
+    times, send = [], DrawerBackend.send_targets
+
+    def wrapped(self, q, t_cmd=None):
+        before = self.data.time
+        send(self, q, t_cmd)
+        times.append((before, self.data.time, t_cmd))
+    monkeypatch.setattr(DrawerBackend, "send_targets", wrapped)
+    return times
+
+
+def hold_reset_action(spec):
+    from xle_workbench.sim import ROBOTS as BENCH
+    low, high = spec.position_limits.T
+    return 2 * (np.asarray(BENCH[spec.name]["reset_pose"]) - low) / (high - low) - 1
+
+
+def test_gate_rollout_runs_a_full_drawer_episode_with_a_constant_policy(monkeypatch):
+    from xert.eval import gate_experiment as gx
+    spec = spec_of("so101")
+    times = timed(monkeypatch)
+    names = [f"{joint}.pos" for joint in spec.joint_names] + environment_names("drawer")
+    policy = ConstantPolicy(hold_reset_action(spec))
+    trial = gx.rollout(policy, spec, 10000, names, "drawer")
+    assert trial == {"seed": 10000, "success": False, "steps": 600, "failure_reason": "timeout"}
+    assert len(times) == 600 and all(t is None for _, _, t in times)  # Policy rollouts pass t_cmd=None.
+    np.testing.assert_allclose([after - before for before, after, _ in times], PERIOD, rtol=0, atol=1e-9)
+    assert len(policy.inputs) == 600 and policy.inputs[0].shape == (len(names),)
+    assert policy.inputs[0][names.index("drawer.pos")] > 0
+    assert policy.inputs[-1][names.index("time_fraction")] == np.float32(599 / 600)
+
+
+def test_ledger_and_teleop_cli_accept_drawer(monkeypatch):
+    import argparse
+    from xert.eval import ledger
+    from xert.runtime import cli, teleop
+    row = ledger.new_row(git_commit="0" * 40, git_dirty=False, slice="K", experiment="test", backend="mujoco",
+                         embodiment="so101", metric="success_rate", value=0.0, ci95=None, n=1,
+                         seeds={"train": [], "eval": [0]}, config_path="c", artifact_paths=["a"], notes="test row",
+                         task_id="drawer")
+    ledger.validate_row(row)
+    parser = argparse.ArgumentParser()
+    cli.add_commands(parser.add_subparsers(dest="command"))
+    args = parser.parse_args(["teleop", "--spec", "s", "--profile", "p", "--calibration", "c", "--output", "o",
+                              "--task", "drawer"])
+    assert args.task == "drawer" and set(teleop.TASK_TEXT) == set(teleop.SUCCESS_PROVENANCE) >= {"drawer"}
