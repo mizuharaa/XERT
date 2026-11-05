@@ -84,6 +84,14 @@ def test_spawns_are_seeded_inside_their_rectangles_and_never_overlap():
         assert abs(block[1] - base[1]) >= .016 + .014  # Footprints 16 mm square; 3 cm apart at the closest.
 
 
+def test_both_arms_reach_both_spawn_rectangles_at_stacking_heights():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from stack_reach import TOLERANCE, reach_report
+    for robot in ROBOTS:
+        report = reach_report(robot)
+        assert len(report["samples"]) == 24 and report["worst_fk_error_m"] < TOLERANCE, robot
+
+
 def test_each_check_on_hand_built_states(scene):
     _, model, _, _ = scene
     task = StackTask(model)
