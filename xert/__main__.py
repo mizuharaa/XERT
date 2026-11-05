@@ -12,7 +12,7 @@ def main():
     ledger.add_subparsers(dest="operation", required=True).add_parser("show")
     from .runtime.cli import add_commands, execute
     from .data import cameras, lerobot_io, map_from_calibration, quality
-    from .eval import image_act, replay_real
+    from .eval import dagger, image_act, replay_real
     add_commands(commands)
     quality.add_command(commands)
     cameras.add_command(commands)
@@ -20,6 +20,7 @@ def main():
     replay_real.add_command(commands)
     map_from_calibration.add_command(commands)
     image_act.add_command(commands)
+    dagger.add_command(commands)
     args = parser.parse_args()
     if args.command == "quality":
         quality.execute(args)
@@ -35,6 +36,9 @@ def main():
         return
     if args.command == "image-act":
         image_act.execute(args)
+        return
+    if args.command == "dagger":
+        dagger.execute(args)
         return
     if args.command == "replay-real":
         replay_real.execute(args)
