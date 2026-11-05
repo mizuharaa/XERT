@@ -156,8 +156,8 @@ adds `stable_steps`), `finished`, `object_names`, `metadata()` (recorded as `sou
 
 - `xert/tasks/stack_expert.py:10` `stack_expert_targets(step, block, base_block)`: waypoint schedule.
 - `xert/tasks/stack_expert.py:29` `stack_expert_action(backend)`: joint targets for one tick.
-- Done means these pass, after which you delete the markers: `tests/test_stack_expert.py:24`
-  `test_scripted_stack_success_on_seeds_0_to_8` and `:31` `test_scripted_stack_success_on_held_out_seeds`
+- Done means these pass, after which you delete the markers: `tests/test_stack_expert.py:28`
+  `test_scripted_stack_success_on_seeds_0_to_8` and `:36` `test_scripted_stack_success_on_held_out_seeds`
   (10000..10008), both for xlerobot_left and so101.
 
 ## What is NOT shown
