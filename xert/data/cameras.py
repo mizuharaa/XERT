@@ -222,6 +222,11 @@ def _columns(features, robot_joints, bodies=("block",)):
     return {part: [where[name] for name in names] for part, names in wanted.items()}
 
 
+def row_state(frame, where):
+    """One recorded row's scene parts (float64) from the `_columns` locations: the offline half of review H-03."""
+    return {part: np.asarray([frame[key][i] for key, i in entries], dtype=np.float64) for part, entries in where.items()}
+
+
 def scene_objects(state, bodies):
     """Named free-body poses for CameraRenderer.render from the per-body vectors `_columns` located."""
     return {f"{body}.{axis}": value for body in bodies for axis, value in zip(POSE, state[body])}
@@ -269,8 +274,7 @@ def _render_one(source, staging, renderer, repo_id):
                     value = columns[key][row]
                     frame[key] = value if feature["dtype"] == "string" else \
                         np.asarray(value, dtype=feature["dtype"]).reshape(feature["shape"])
-                state = {part: np.asarray([frame[key][i] for key, i in entries], dtype=np.float64)
-                         for part, entries in where.items()}
+                state = row_state(frame, where)
                 rendered, achieved = renderer.render(state["joints"], scene_objects(state, renderer.bodies))
                 for name in renderer.checks:
                     errors[name] = max(errors[name], _error(name, achieved[name], state[name]))
