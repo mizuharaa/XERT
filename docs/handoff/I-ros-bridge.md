@@ -204,7 +204,8 @@ ros2 launch xert_ros_bridge bridge.launch.py clip:=/path/to/clip.json
 - The job passed. `colcon test-result`: "Summary: 25 tests, 0 errors, 0
   failures, 2 skipped". The `xert_ros` CTest entries passed 6/6. The
   bridge launch test reported "1 passed in 29.12s". The rclpy step
-  (`tests/test_ros_bridge.py` with ROS sourced) passed as part of the job.
+  (`tests/test_ros_bridge.py` with ROS sourced) reported "10 passed in
+  5.26s": the rclpy test that skips on this PC ran there.
 - The Jazzy Python environment works: the lock installs into the system
   Python 3.12, `_reach_core` builds against `/usr/bin/python3`, the
   editable XERT install imports `CalibratedMapper`, and numpy 1.26.4 +
@@ -233,7 +234,7 @@ ros2 launch xert_ros_bridge bridge.launch.py clip:=/path/to/clip.json
 
 ## CI history (six runs)
 
-1. Collection failed: `LaunchDescriptionSource` is not in
+1. 41977628689: collection failed: `LaunchDescriptionSource` is not in
    `launch.launch_description_sources` on Jazzy. Fixed by importing it from
    `launch.launch_description_source` (be61a75), after checking every ROS
    import against the jazzy-branch sources.
