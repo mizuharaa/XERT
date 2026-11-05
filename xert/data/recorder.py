@@ -69,9 +69,10 @@ class RuntimeRecorder:
     task_success=True adds `next.success`; every record then needs an explicit boolean "success".
     environment_state=(names, initial values) adds `observation.environment_state` (LeRobot name); every record
     then needs "environment_state" after its step, stored pre-action on the next frame exactly like observation.state.
+    task_id (xert.tasks.TASKS) is written to the manifest when given; bench-task writers (teleop) always give it.
     """
     def __init__(self, spec_path, initial_state, output, *, task, source, repo_id="xert/runtime", spec_bytes=None,
-                 task_success=False, environment_state=None):
+                 task_success=False, environment_state=None, task_id=None):
         if getattr(initial_state, "measured", True) is False:
             raise ValueError("Refusing to record commanded (not measured) state as observations")
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -80,6 +81,9 @@ class RuntimeRecorder:
             raise FileExistsError(self.output)
         if not isinstance(task, str) or not task.strip():
             raise ValueError("Recording requires a nonempty task description")
+        if task_id is not None:
+            from xert.tasks import check_task_id
+            check_task_id(task_id)
         if not isinstance(source, dict) or source.get("kind") not in ("scripted", "webcam", "recorded_human"):
             raise ValueError("Source provenance must declare scripted, webcam, or recorded_human")
         self.source = json.loads(json.dumps(source, allow_nan=False))
@@ -102,7 +106,8 @@ class RuntimeRecorder:
                                                 use_videos=False, video_backend="pyav")
             self.manifest = {"version": 1, "status": "recording", "backend": "mujoco", "hardware": False,
                              "embodiment": self.spec.name, "joint_names": list(self.spec.joint_names),
-                             "fps": self.spec.control_hz, "task": task, "task_outcome": None,
+                             "fps": self.spec.control_hz, "task": task,
+                             **({"task_id": task_id} if task_id is not None else {}), "task_outcome": None,
                              "source": self.source, "lerobot_version": importlib.metadata.version("lerobot"),
                              "state_units": "joint position radians", "velocity_units": "radians per second",
                              "action_units": "absolute joint position targets in radians, after safety clamps",

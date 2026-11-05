@@ -153,6 +153,9 @@ def test_stop_finalises_episode_that_round_trips(tmp_path):
     assert verify_recording(kept[0])["frames"] == 3 and verify_recording(kept[1])["frames"] == 1
     manifest = json.loads((kept[0] / "xert_recording.json").read_text())
     assert manifest["source"]["kind"] == "scripted" and manifest["source"]["bench_seed"] == 0
+    assert manifest["task_id"] == "pick_place" and manifest["task"] == teleop.TASK
+    journal = [json.loads(line)["runtime"] for line in (kept[0] / "xert_frames.jsonl").read_text().splitlines()]
+    assert {frame["task_id"] for frame in journal} == {"pick_place"}
     assert manifest["task_outcome"] == {"success": False, "failure_reason": None, "ended_by": "operator", "steps": 3}
     dataset = load_runtime_dataset(kept[0])
     assert dataset.features["next.success"]["dtype"] == "bool" and len(dataset) == 3
