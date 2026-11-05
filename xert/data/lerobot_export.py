@@ -181,7 +181,8 @@ def export_episodes(store, episode_ids, output, *, task, robot_type='xlerobot_le
         gc.collect()
         verification = verify_roundtrip(store, episode_ids, staging, repo_id, task)
         atomic_json(staging / 'xert_export.json', {
-            'schema_version': 1, 'backend': 'mujoco', 'robot_type': robot_type, 'task': task,
+            # task_id: Store episodes pass _schema only with the native pick-and-place bench provenance.
+            'schema_version': 1, 'backend': 'mujoco', 'robot_type': robot_type, 'task': task, 'task_id': 'pick_place',
             'lerobot_version': importlib.metadata.version('lerobot'), 'fps': fps,
             'timestamp_semantics': 'derived simulation time: frame_index / fps; not measured capture time',
             'action_semantics': 'verified corrective labels when present, otherwise executed normalized targets',

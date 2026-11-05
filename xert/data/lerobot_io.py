@@ -128,7 +128,8 @@ def _recording(raw, info):
         arrays["environment_state"] = columns["observation.environment_state"]
         names["environment_state"] = _names(info, "observation.environment_state")
     bench = manifest["source"].get("bench")
-    return columns, arrays, {"units": "radians", "embodiment": manifest["embodiment"],
+    from xert.data.cameras import _recorded_task
+    return columns, arrays, {"units": "radians", "embodiment": manifest["embodiment"], "task_id": _recorded_task(raw),
                              "spec_sha256": manifest["spec_sha256"], "columns": names,
                              "model_sha256": bench["model_sha256"] if bench else None,
                              "state_units": manifest["state_units"], "action_units": manifest["action_units"]}

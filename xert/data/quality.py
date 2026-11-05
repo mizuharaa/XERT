@@ -123,6 +123,11 @@ def execute(args):
     if len(identity) != 1:
         raise ValueError(f"Recordings mix source kind, backend or embodiment: {sorted(identity)}")
     [(kind, backend, embodiment)] = identity
+    from xert.data.cameras import _recorded_task
+    tasks = {_recorded_task(path) for path in recordings}  # Legacy data resolves by fingerprint or is refused.
+    if len(tasks) != 1:
+        raise ValueError(f"Recordings mix task_id {sorted(map(str, tasks))}; tasks are never pooled")
+    [task_id] = tasks  # None: no bench scene recorded (record-motion data); its rows carry no task_id.
     if args.ledger and kind not in HUMAN_SOURCES:
         raise ValueError(f"Refusing ledger rows for {kind!r} data; only {HUMAN_SOURCES} count as demonstrations")
     rows, sources = [], set()
@@ -134,7 +139,7 @@ def execute(args):
         raise ValueError(f"Refusing ledger rows: frame sources {sorted(sources - {kind})} conflict with manifest {kind!r}")
     args.output.mkdir(parents=True)
     report = args.output / "metrics.json"
-    report.write_text(json.dumps({"dataset": str(args.dataset), "source_kind": kind, "episodes": rows,
+    report.write_text(json.dumps({"dataset": str(args.dataset), "source_kind": kind, "task_id": task_id, "episodes": rows,
                                   "distributions": distributions(rows)}, indent=2, allow_nan=False),
                       encoding="utf-8")
     table = args.output / "episodes.csv"
@@ -153,7 +158,8 @@ def execute(args):
         metric, value = ("success_rate", float(np.mean(values))) if name == "success" else \
             (f"{name}_median", float(np.median(values)))
         row = new_row(**provenance, slice="P5.1", experiment="gate_metrics_v1", backend=backend,
-                      embodiment=embodiment, metric=metric, value=value, ci95=None, n=len(values),
+                      embodiment=embodiment, **({"task_id": task_id} if task_id else {}), metric=metric, value=value,
+                      ci95=None, n=len(values),
                       seeds={"train": [], "eval": []}, config_path=artifact_path(root),
                       artifact_paths=list(hashes), artifact_sha256=hashes,
                       notes=f"Per-episode {name} over {len(values)} of {len(rows)} {kind} episodes in simulation; "
