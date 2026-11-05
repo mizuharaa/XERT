@@ -1,0 +1,16 @@
+# ROS 2 bridge environment (slice I): the Jazzy system CPython 3.12, linux x86_64; no venv, because rclpy lives there.
+# Input: numpy==1.26.4, mujoco==3.14.0, pybind11==3.1.0 (the version scripts/build_core.ps1 installs). No torch, no mediapipe.
+# numpy is pinned to Ubuntu 24.04's python3-numpy (1.26.4), which Jazzy's apt packages are built against; a NumPy 2 wheel would shadow it (untested).
+# Install with `pip install --no-deps --ignore-installed -r` (ros.yml); every pin resolved to a binary cp312 wheel.
+#    printf 'numpy==1.26.4\nmujoco==3.14.0\npybind11==3.1.0\n' | uv pip compile - --python-version 3.12 --python-platform x86_64-unknown-linux-gnu --only-binary :all: --no-annotate --no-header
+absl-py==2.5.1
+etils==1.15.0
+fsspec==2026.9.0
+glfw==2.11.0
+mujoco==3.14.0
+numpy==1.26.4
+pybind11==3.1.0
+pyopengl==3.1.10
+typing-extensions==4.16.0
+websockets==17.4
+zipp==4.1.2
