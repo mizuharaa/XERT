@@ -89,9 +89,14 @@ class TestBridgeLaunch(unittest.TestCase):
             cls.command_ages.append(cls.node.get_clock().now().nanoseconds - stamp)
             cls.commands.append(msg)
 
-        cls.node.create_subscription(JointState, COMMANDS[0], on_command, qos(COMMANDS))
-        cls.node.create_subscription(JointState, STATES[0], cls.states.append, qos_profile_sensor_data)
+        # Record /joint_states first: the bridge is released (wait_subscribers:=2) only once the command
+        # subscription below exists, so the state window covers the whole run (run 41995929551 matched the
+        # best-effort state subscription late and missed the gripper peak).
+        states = cls.node.create_subscription(JointState, STATES[0], cls.states.append, qos_profile_sensor_data)
         threading.Thread(target=cls.executor.spin, daemon=True).start()
+        if not wait_for(lambda: states.get_publisher_count() >= 1 and cls.states, 30):
+            raise RuntimeError('no /joint_states from the follower within 30 s')
+        cls.node.create_subscription(JointState, COMMANDS[0], on_command, qos(COMMANDS))
 
     @classmethod
     def tearDownClass(cls):
@@ -178,6 +183,10 @@ class TestBridgeLaunch(unittest.TestCase):
                   f'{round((state_stamps[-1] - state_stamps[0]) * SPEC.control_hz) + 1} follower ticks, '
                   f'{len(state_stamps)} received')
         print(report, flush=True)
+        # The window covers the run, and silent best-effort loss cannot hide in it.
+        self.assertLess(state_stamps[0], stamps[0], report)
+        ticks = round((state_stamps[-1] - state_stamps[0]) * SPEC.control_hz) + 1
+        self.assertGreaterEqual(len(state_stamps), .8 * ticks, report)
         # The follower is a 25 Hz node: its state stamps must be one control period apart.
         self.assertAlmostEqual(float(np.median(np.diff(state_stamps))), 1 / SPEC.control_hz, delta=.005, msg=report)
         # Per stamp, not peak vs peak: replay core.Follower offline over every received command at the
