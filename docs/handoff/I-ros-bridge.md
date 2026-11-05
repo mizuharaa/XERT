@@ -70,8 +70,8 @@ here.
     `name`/`position` lengths match, all positions are finite, and its
     stamp is finite, not earlier than the last accepted stamp, and not
     more than **0.02 s** ahead of the follower's clock (`FUTURE_S`: half a
-    25 Hz period, for the offset measurement and clock drift on one host;
-    on two hosts, sync clocks first). Positions are reordered by name. A
+    25 Hz period, for the one-time offset measurement on one host; on two
+    hosts, sync clocks first). Positions are reordered by name. A
     rejected message changes neither the accepted target nor its stamp.
   - Each tick, the effective target is the accepted target while
     `now - stamp <= 0.2 s`, else the target the follower applied last tick
@@ -235,9 +235,12 @@ does is Daniel's decision (see the open question below).
   Should Daniel's node hold on transport loss too?
 - The 0.02 s future-stamp tolerance assumes one host. Two hosts need clock
   sync (chrony) and probably a larger tolerance.
-- The clock offset is measured once per run (ROS time is the system
-  clock); a long webcam run under NTP slewing could drift it (ceiling noted
-  in `bridge_node.py`).
+- The clock offset is measured once per run. On Linux, NTP slewing moves
+  `CLOCK_MONOTONIC` (perf_counter) and `CLOCK_REALTIME` (ROS time) at the
+  same rate, so the offset does not drift; only a realtime step changes
+  it. Both directions fail safe: a forward step makes commands look old
+  (the follower holds), a backward step of more than 0.02 s makes them
+  look future (rejected, with warnings). No mitigation on the clip path.
 - No ament linters run on the Python package (no flake8/pep257 tests): the
   ROS flake8 config could not be run here before CI. Add
   `test/test_flake8.py` once a CI run shows the style it reports.

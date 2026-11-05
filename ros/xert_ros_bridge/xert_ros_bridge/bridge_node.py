@@ -66,9 +66,10 @@ def main(argv=None):
             args.source, args.spec, args.profile, clip=args.clip or None, calibration=args.calibration or None,
             duration=args.duration or None, camera=args.camera, model=args.model or None)
         names = list(backend.spec.joint_names)
-        # One offset for the whole run: ROS clock minus run_loop's perf_counter clock.
-        # ponytail: measured once, so system-clock slewing (NTP, at most ~0.5 ms/s) drifts it during long
-        # webcam runs; re-measure per command if FUTURE_S or STALE_S ever trip on drift.
+        # One offset for the whole run: ROS clock minus run_loop's perf_counter clock. On Linux NTP slews
+        # CLOCK_MONOTONIC (perf_counter) and CLOCK_REALTIME (ROS time) at the same rate, so it does not
+        # drift; only a realtime step changes it, and both directions fail safe: forward ages commands
+        # (stale, follower holds), backward by > FUTURE_S makes them future (rejected with a warning).
         offset_ns = node.get_clock().now().nanoseconds - time.perf_counter_ns()
         node.get_logger().info(f'clock offset (ROS time - perf_counter) = {offset_ns} ns')
         while publisher.get_subscription_count() < args.wait_subscribers and not stop.is_set():

@@ -20,7 +20,7 @@ STAMP_RULE = ("stamp = generation time of the safety-checked command; "
 
 STALE_S = .2  # Transport freshness: now - header.stamp above this means the command is late or lost.
 # A stamp may lead the follower's clock by this much: half a 25 Hz period covers the bridge's one-time
-# clock-offset measurement and perf_counter/system-clock drift on one host. Across hosts, sync clocks first.
+# clock-offset measurement (two consecutive clock reads) on one host. Across hosts, sync clocks first.
 FUTURE_S = .02
 # SafetyController's stale + hold + return defaults (xert/safety/limits.py:33), plus 1 s to settle at rest:
 # a clip run ends only after the safety layer has walked the arm back to rest.
