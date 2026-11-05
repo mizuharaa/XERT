@@ -2,7 +2,7 @@
 
 Every applied command goes out from run_loop's on_step as a position-only JointState on
 /xert/joint_commands, header.stamp = the command's generation time (core.pack). The node only
-publishes; its executor spins on a daemon thread so run_loop's wall-clock deadlines never wait on ROS.
+publishes; its executor spins on a second thread so run_loop's wall-clock deadlines never wait on ROS.
 SIGINT/SIGTERM become run_loop's e-stop: one final e-stop command is published, then the node exits.
 """
 import argparse
@@ -48,15 +48,24 @@ def main(argv=None):
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     node = rclpy.create_node('xert_bridge')
+    publisher = node.create_publisher(JointState, COMMANDS[0].lstrip('/'), qos(COMMANDS))
     executor = SingleThreadedExecutor()
     executor.add_node(node)
+    halt = threading.Event()
+
+    def spin():
+        # spin_once with a timeout, not executor.spin(): Executor.shutdown() destroys the guard condition
+        # without waiting for a spinning thread (rclpy jazzy executors.py), so the thread stops first.
+        while not halt.is_set() and rclpy.ok():
+            executor.spin_once(timeout_sec=.1)
+
+    spinner = threading.Thread(target=spin, name='xert_bridge_spin')
+    spinner.start()
     try:
         source, backend, mapper, duration = open_pipeline(
             args.source, args.spec, args.profile, clip=args.clip or None, calibration=args.calibration or None,
             duration=args.duration or None, camera=args.camera, model=args.model or None)
         names = list(backend.spec.joint_names)
-        publisher = node.create_publisher(JointState, COMMANDS[0].lstrip('/'), qos(COMMANDS))
-        threading.Thread(target=executor.spin, daemon=True).start()
         # One offset for the whole run: ROS clock minus run_loop's perf_counter clock.
         # ponytail: measured once, so system-clock slewing (NTP, at most ~0.5 ms/s) drifts it during long
         # webcam runs; re-measure per command if FUTURE_S or STALE_S ever trip on drift.
@@ -80,6 +89,10 @@ def main(argv=None):
         publisher.wait_for_all_acked(Duration(seconds=1))
         node.get_logger().info(f'published {len(sent)} commands; last phase {sent[-1] if sent else None}')
     finally:
+        # Order matters (CI run 41994577985 aborted with SIGABRT at exit): stop and join the spin thread,
+        # then shut the executor down, destroy the node, and only then shut down the context.
+        halt.set()
+        spinner.join()
         executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()

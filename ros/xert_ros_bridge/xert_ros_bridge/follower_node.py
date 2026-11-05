@@ -7,7 +7,7 @@ import argparse
 import sys
 
 import rclpy
-from rclpy.executors import ExternalShutdownException
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 from sensor_msgs.msg import JointState
 
@@ -43,11 +43,15 @@ def main(argv=None):
 
     node.create_subscription(JointState, COMMANDS[0].lstrip('/'), on_command, qos(COMMANDS))
     node.create_timer(1 / spec.control_hz, tick)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()  # on this thread, so it has returned before the teardown below
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
+        # Same teardown order as xert_bridge: executor, node, context, then the sim.
+        executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()
         backend.close()
