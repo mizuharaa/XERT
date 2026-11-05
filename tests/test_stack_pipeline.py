@@ -144,6 +144,12 @@ def test_live_and_offline_renders_are_pixel_equal_with_base_block_displaced():
             raise
         pytest.skip(f"No offscreen GL context: {exc!r}")
     try:
+        # MSAA off for this comparison only: with MuJoCo's default 4 offscreen samples, re-rendering one identical
+        # state on the Windows GPU differed in 3-4 of 40 frames (pick_place and stack alike; 0 of 40 without MSAA),
+        # which is driver noise, not a path difference. The path under test is the same with either setting.
+        renderer.renderer.close()
+        renderer.model.vis.quality.offsamples = 0
+        renderer.renderer = mujoco.Renderer(renderer.model, 64, 64)
         image = {"dtype": "image", "shape": (64, 64, 3)}
         live = image_act.live_frame(backend, renderer, {"observation.images.scene": image,
                                                         "observation.images.wrist": image})
