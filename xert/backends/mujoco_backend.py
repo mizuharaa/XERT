@@ -6,9 +6,9 @@ from .base import JointState
 
 
 class MuJoCoBackend:
-    def __init__(self, spec, timestep=None):
+    def __init__(self, spec, timestep=None, model=None):
         self.spec = spec
-        self.model = spec.load_model()
+        self.model = spec.load_model() if model is None else model  # A composed scene (StackBackend) or the spec's.
         if timestep is not None:  # replay-real: a dt whose physics steps exactly fill one recorded frame.
             self.model.opt.timestep = timestep
         self.data = mujoco.MjData(self.model)
