@@ -219,7 +219,8 @@ def iterate(run, retry=False):
     from xert.eval import gate_experiment
     from xle_workbench.learning import validate_config
     run = Path(run).absolute()
-    manifest = json.loads((run / "manifest.json").read_text("utf-8"))
+    committed = (run / "manifest.json").read_bytes()  # Compared again just before the commit.
+    manifest = json.loads(committed)
     iteration = len(manifest["iterations"])
     folder = run / f"iteration_{iteration:03d}"
     attempts = sorted(int(path.name.split("_")[1]) for path in folder.glob("attempt_*"))
@@ -294,6 +295,9 @@ def iterate(run, retry=False):
              "report_sha256": sha256(path / "report.json"),
              "incomplete_attempts": [f"{folder.name}/attempt_{number}" for number in attempts],
              "episodes": [_reference(f"{relative}/dataset", record) for record in records]}
+    # ponytail: check-then-replace leaves a tiny window for a second writer; a lock file if runs ever share a writer.
+    if (run / "manifest.json").read_bytes() != committed:
+        raise ValueError(f"manifest changed during this iteration; {relative} stays uncommitted (rerun with --retry)")
     atomic_json(run / "manifest.json", {**manifest, "iterations": [*manifest["iterations"], entry]})  # The commit.
     return report
 

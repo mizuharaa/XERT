@@ -88,6 +88,10 @@ happened and no DAgger number exists.** The mixing rule, the stopping rule and t
   sha256. Training (`_Aggregate`) and the `should_stop` history read check those hashes.
 - A retry draws the same rollout seeds, because they come from the committed aggregate. An abandoned attempt can
   therefore never cause a duplicate seed or episode.
+- Compare before replace: `iterate` keeps the manifest bytes it started from and re-reads them just before the
+  replacement. If they differ it refuses with "manifest changed during this iteration" and the attempt stays
+  unreferenced. The re-read and the replace are not one atomic step, so this guards a single writer against a
+  stray edit, not concurrent writers (that would need a lock file).
 
 ## How to verify
 

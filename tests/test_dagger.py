@@ -258,6 +258,29 @@ def test_failure_after_collection_before_the_report_then_retry(seed_collection, 
         dagger.iterate(run, retry=True)
 
 
+def test_a_manifest_changed_during_the_iteration_is_not_overwritten(seed_collection, tmp_path, monkeypatch):
+    from xert.eval import gate_experiment
+    install_rules(monkeypatch)
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    real_rollout, changed = gate_experiment.rollout, {}
+
+    def another_writer(*args, **kwargs):  # Evaluation runs after staging and before the commit.
+        if not changed:
+            record = manifest(run)
+            record["note"] = "another writer"
+            (run / "manifest.json").write_text(json.dumps(record))
+            changed["bytes"] = (run / "manifest.json").read_bytes()
+        return real_rollout(*args, **kwargs)
+
+    monkeypatch.setattr(gate_experiment, "rollout", another_writer)
+    with pytest.raises(ValueError, match="manifest changed during this iteration"):
+        dagger.iterate(run)
+    assert (run / "manifest.json").read_bytes() == changed["bytes"]
+    assert len(manifest(run)["iterations"]) == 1  # attempt_1 stays unreferenced.
+    assert (run / "iteration_001/attempt_1/report.json").exists()
+
+
 @pytest.mark.parametrize("moment", ["before", "after"])
 def test_interruption_around_the_manifest_replacement(seed_collection, tmp_path, monkeypatch, moment):
     install_rules(monkeypatch)
