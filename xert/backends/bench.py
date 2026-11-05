@@ -5,7 +5,7 @@ from .base import JointState
 
 
 class BenchBackend:
-    """One bench episode. Absolute targets are normalized exactly as ManipulationEnv expects.
+    """TaskBackend for pick_place: one bench episode. Absolute targets are normalized exactly as ManipulationEnv expects.
 
     The bench robot is the spec's name (xlerobot_left or so101). The core steps 1/(control_hz*timestep)
     physics substeps per call (20 on both benches) and decides success, failure and timeout;
@@ -18,9 +18,27 @@ class BenchBackend:
                 not np.array_equal(spec.position_limits, self.env.limits)):
             raise ValueError("Spec does not describe the bench arm joints, limits and control rate")
         self.spec, self.model, self.data = spec, self.env.model, self.env.data
-        self.object_names = self.env.metadata()["observation_names"][12:]  # The P1.4 ACT environment_state split.
+        self.observation_names = self.env.metadata()["observation_names"]
+        self.object_names = self.observation_names[12:]  # The P1.4 ACT environment_state split.
         self.env.reset(seed)
         self.info, self.closed = None, False
+
+    task_id = "pick_place"
+
+    @property
+    def config(self):
+        return self.env.config
+
+    @property
+    def limits(self):
+        return self.env.limits
+
+    def metadata(self):
+        return self.env.metadata()
+
+    def observation(self):
+        """Native observation by name (float32, as the core computes it)."""
+        return dict(zip(self.observation_names, self.env._obs()))  # ponytail: private accessor; no public one.
 
     @property
     def finished(self):

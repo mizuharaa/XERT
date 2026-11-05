@@ -84,10 +84,10 @@ def load_recording(path):
     return names, action_names, observation.astype(np.float32), columns["action"][order].astype(np.float64)
 
 
-def bench_observation(backend, names, native_names):
-    """Build the policy input by feature name from bench state: `<joint>.pos/.vel`, or a native observation name."""
+def bench_observation(backend, names):
+    """Build the policy input by feature name from a TaskBackend: `<joint>.pos/.vel`, or a backend observation name."""
     state = backend.read_state()
-    values = dict(zip(native_names, backend.env._obs()))  # ponytail: private accessor; the native env has no public one.
+    values = dict(backend.observation())
     values.update({f"{joint}.pos": q for joint, q in zip(backend.spec.joint_names, state.q)})
     values.update({f"{joint}.vel": qd for joint, qd in zip(backend.spec.joint_names, state.qd)})
     missing = [name for name in names if name not in values]
@@ -96,14 +96,13 @@ def bench_observation(backend, names, native_names):
     return np.asarray([values[name] for name in names], dtype=np.float32)
 
 
-def rollout(policy, spec, seed, names):
-    from xert.backends.bench import BenchBackend
-    backend = BenchBackend(spec, seed)
-    native_names = backend.env.metadata()["observation_names"]
-    low, high = backend.env.limits.T
+def rollout(policy, spec, seed, names, task_id="pick_place"):
+    from xert.backends.base import task_backend
+    backend = task_backend(spec, seed, task_id)
+    low, high = backend.limits.T
     policy.reset()
     while not backend.finished:
-        action = policy.act(bench_observation(backend, names, native_names))  # Clipped to [-1, 1].
+        action = policy.act(bench_observation(backend, names))  # Clipped to [-1, 1].
         backend.send_targets(low + (action + 1) / 2 * (high - low), None)
         if backend.info["success"]:
             break
@@ -112,6 +111,7 @@ def rollout(policy, spec, seed, names):
 
 
 def run(config_path, sessions, output, report_path):
+    from xert.data.cameras import _recorded_task
     from xert.data.quality import dataset_metrics
     from xert.spec import load_spec
     from xle_workbench.learning import load_policy, train
@@ -143,7 +143,7 @@ def run(config_path, sessions, output, report_path):
     recordings = [path for session in sessions for path in sorted(Path(session).glob("episode_*"))]
     if not recordings:
         raise ValueError("No episode_* recordings in the given sessions")
-    episodes, verdicts, bench_seeds, kinds = [], [], set(), set()
+    episodes, verdicts, bench_seeds, kinds, tasks = [], [], set(), set(), set()
     for path in recordings:
         manifest = json.loads((path / "xert_recording.json").read_text(encoding="utf-8"))
         kind = manifest["source"]["kind"]
@@ -169,6 +169,10 @@ def run(config_path, sessions, output, report_path):
         verdicts.append({"recording": str(path), "passed": passed, "reasons": reasons, "metrics": metrics})
         bench_seeds.add(manifest["source"]["bench_seed"])
         kinds.add(kind)
+        tasks.add(_recorded_task(path))
+    if len(tasks) != 1 or None in tasks:
+        raise ValueError(f"Recordings must share one bench task; they name task_id {sorted(map(str, tasks))}")
+    [task_id] = tasks
     if set(eval_seeds) & bench_seeds:
         raise ValueError("Evaluation seeds overlap demonstration bench seeds; held-out states required")
     passed = [row["passed"] for row in verdicts]
@@ -176,16 +180,15 @@ def run(config_path, sessions, output, report_path):
         raise ValueError(f"The gate kept {sum(passed)} of {len(passed)} episodes; "
                          "B needs >= 2 episodes and must differ from A")
     names = episodes[0]["names"]
-    from xert.backends.bench import BenchBackend
-    probe = BenchBackend(spec, eval_seeds[0])
-    bench_observation(probe, names, probe.env.metadata()["observation_names"])  # Refuse before any training.
+    from xert.backends.base import task_backend
+    bench_observation(task_backend(spec, eval_seeds[0], task_id), names)  # Refuse before any training.
     output = Path(output)
     output.mkdir(parents=True)
     gate = {"gate_path": config["gate_path"], "gate_sha256": gate_sha256, "gate_commit": gate_commit,
             "experiment_config_sha256": config_sha256, "experiment_config_commit": config_commit}
     common_paths = [output / "config.json", output / "verdicts.json", gate_file]
     (output / "config.json").write_text(json.dumps({
-        **config, **provenance, **gate,
+        **config, **provenance, **gate, "task_id": task_id,
         "sessions": [str(s) for s in sessions], "observation_names": names,
         "action_names": episodes[0]["action_names"]}, indent=2), encoding="utf-8")
     (output / "verdicts.json").write_text(json.dumps(verdicts, indent=2, allow_nan=False), encoding="utf-8")
@@ -201,7 +204,7 @@ def run(config_path, sessions, output, report_path):
                    "action_names": episodes[0]["action_names"]},
                   progress=lambda record: print(json.dumps({"condition": condition, "seed": seed, **record}), flush=True))
             policy = load_policy(model_dir)
-            trials = [rollout(policy, spec, eval_seed, names) for eval_seed in eval_seeds]
+            trials = [rollout(policy, spec, eval_seed, names, task_id) for eval_seed in eval_seeds]
             successes = sum(trial["success"] for trial in trials)
             evaluation = model_dir / "evaluation.json"
             evaluation.write_text(json.dumps({"condition": condition, "train_seed": seed, "trials": trials,
@@ -209,7 +212,7 @@ def run(config_path, sessions, output, report_path):
                                              indent=2), encoding="utf-8")
             artifacts = [model_dir / "model.pt", model_dir / "metadata.json", evaluation, *common_paths]
             row = ledger.new_row(
-                **provenance, slice="P5.3", experiment=tag, backend="mujoco", embodiment=spec.name,
+                **provenance, slice="P5.3", experiment=tag, backend="mujoco", embodiment=spec.name, task_id=task_id,
                 metric="success_rate", value=successes / len(trials), ci95=wilson(successes, len(trials)),
                 n=len(trials), seeds={"train": [seed], "eval": list(eval_seeds)},
                 config_path=ledger.artifact_path(output / "config.json"),

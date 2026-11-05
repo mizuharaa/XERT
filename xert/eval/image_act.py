@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from xert.data.cameras import BLOCK, CAMERAS, _recorded_robot
+from xert.data.cameras import CAMERAS, _recorded_robot, _recorded_task
 from xert.data.quality import HUMAN_SOURCES
 from xert.eval import ledger
 from xle_workbench.storage import atomic_json, sha256
@@ -127,6 +127,9 @@ def describe(paths):
     if len(robots) != 1 or not robots <= set(CAMERAS):
         raise ValueError(f"Need one bench robot of {sorted(CAMERAS)}; datasets name {robots}")
     robot = robots.pop()
+    tasks = {_recorded_task(root) for root in roots}
+    if len(tasks) != 1 or None in tasks:
+        raise ValueError(f"Need one bench task; datasets name task_id {sorted(map(str, tasks))}")
     if not all((root / "xert_cameras.json").exists() for root in roots):
         raise ValueError("Every dataset must be a render-cameras output (xert_cameras.json)")
     manifests = [json.loads((root / "xert_cameras.json").read_text("utf-8")) for root in roots]
@@ -161,7 +164,7 @@ def describe(paths):
             "meta": {"robot": robot, "fps": infos[0]["fps"], "features": infos[0]["features"],
                      "episodes": sum(info["total_episodes"] for info in infos),
                      "frames": sum(info["total_frames"] for info in infos)},
-            "camera": camera, "action_units": action_units, "source_kinds": sorted(kinds),
+            "camera": camera, "action_units": action_units, "source_kinds": sorted(kinds), "task_id": tasks.pop(),
             "bench_seeds": sorted(seeds), "dataset_sha256": digest.hexdigest()}
 
 
@@ -295,7 +298,8 @@ def train(paths, output, seed=0):
     postprocessor.save_pretrained(output)
     atomic_json(output / METADATA, {
         "slice": "G1", "backend": "mujoco", "hardware": False, **ledger.source_provenance(),
-        "robot": data["meta"]["robot"], "fps": data["meta"]["fps"], "action_units": data["action_units"],
+        "robot": data["meta"]["robot"], "task_id": data["task_id"], "fps": data["meta"]["fps"],
+        "action_units": data["action_units"],
         "datasets": [str(root) for root in data["roots"]], "dataset_sha256": data["dataset_sha256"],
         "source_kinds": data["source_kinds"], "bench_seeds": data["bench_seeds"],
         "episodes": [[str(root), i] for root, i in episodes], "training_episodes": training_ids,
@@ -307,18 +311,18 @@ def train(paths, output, seed=0):
     return output
 
 
-def live_frame(backend, renderer, features, native_names):
-    """One unbatched policy input from the live bench: vectors by feature name, cameras rendered from the live qpos.
+def live_frame(backend, renderer, features):
+    """One unbatched policy input from a live TaskBackend: vectors by feature name, cameras rendered from live state.
 
     Images go through the same CameraRenderer (camera definitions, hidden sites) as render-cameras, as float
     (3, H, W) in [0, 1], which is how LeRobotDataset returns the stored PNGs.
     """
     import torch
     from xert.eval.gate_experiment import bench_observation
-    native = dict(zip(native_names, backend.env._obs()))  # ponytail: private accessor; the native env has no public one.
-    images, _ = renderer.render(backend.read_state().q, [native[name] for name in BLOCK])
+    values = backend.observation()  # Same named object state render-cameras rebuilds offline (review H-03).
+    images, _ = renderer.render(backend.read_state().q, {name: values[name] for name in renderer.object_names})
     return {key: torch.from_numpy(images[key]).permute(2, 0, 1).float().div(255) if key in images
-            else torch.from_numpy(bench_observation(backend, feature["names"], native_names))
+            else torch.from_numpy(bench_observation(backend, feature["names"]))
             for key, feature in features.items()}
 
 
@@ -334,19 +338,19 @@ def decode(action, units, low, high):
 def rollout(policy, preprocessor, postprocessor, spec, seed, metadata):
     """One held-out bench episode; success is the native core's contact rule. One renderer per rollout."""
     import torch
-    from xert.backends.bench import BenchBackend
+    from xert.backends.base import task_backend
     from xert.data.cameras import CameraRenderer
-    backend = BenchBackend(spec, seed)
-    renderer = CameraRenderer(metadata["camera"]["size"], metadata["robot"])
+    backend = task_backend(spec, seed, metadata["task_id"])
+    renderer = CameraRenderer(metadata["camera"]["size"], metadata["robot"], metadata["task_id"])
     try:
         if renderer.model_sha256 != metadata["camera"]["model_sha256"]:
             raise ValueError("The bench camera model differs from the one the training images were rendered on")
-        native_names, (low, high) = backend.env.metadata()["observation_names"], backend.env.limits.T
+        low, high = backend.limits.T
         policy.reset()
         render, infer = [], []
         while not backend.finished:
             start = time.perf_counter()
-            frame = live_frame(backend, renderer, metadata["features"], native_names)
+            frame = live_frame(backend, renderer, metadata["features"])
             middle = time.perf_counter()
             with torch.inference_mode():
                 action = postprocessor(policy.select_action(preprocessor(frame)))[0].numpy().astype(np.float64)
@@ -388,6 +392,8 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
         raise ValueError("Evaluation seeds must be distinct nonnegative integers")
     if set(seeds) & set(metadata["bench_seeds"]):
         raise ValueError("Evaluation seeds overlap the training demonstrations' bench seeds; held-out states required")
+    if metadata.get("task_id") not in ("pick_place", "stack"):
+        raise ValueError("Checkpoint metadata names no bench task_id; retrain it with this version")
     if CAMERAS[metadata["robot"]] != metadata["camera"]["cameras"]:
         raise ValueError("CAMERAS changed since training; live renders would differ from the training images")
     reason = _ledger_reason(metadata["source_kinds"], len(seeds))
@@ -415,6 +421,7 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
     successes = sum(trial["success"] for trial in trials)
     report = {
         "slice": "G1", "experiment": experiment, "checkpoint": str(checkpoint), "robot": metadata["robot"],
+        "task_id": metadata["task_id"],
         "train_seed": metadata["seed"], "seeds": list(seeds), "trials": trials, "successes": successes,
         "n": len(trials), "success_rate": successes / len(trials), "ci95": wilson(successes, len(trials)),
         "source_kinds": metadata["source_kinds"],
@@ -428,7 +435,8 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
     row = None
     if reason is None:
         row = ledger.new_row(**provenance, slice="G1", experiment=experiment, backend="mujoco",
-                             embodiment=metadata["robot"], metric="success_rate", value=report["success_rate"],
+                             embodiment=metadata["robot"], task_id=metadata["task_id"], metric="success_rate",
+                             value=report["success_rate"],
                              ci95=report["ci95"], n=len(trials), seeds={"train": [metadata["seed"]], "eval": list(seeds)},
                              config_path=ledger.artifact_path(checkpoint / METADATA), source_kinds=metadata["source_kinds"],
                              dataset_sha256=metadata["dataset_sha256"], checkpoint_sha256=checkpoint_sha256,

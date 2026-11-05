@@ -1,4 +1,4 @@
-"""Terminal teleoperation on the pick-and-place bench: one LeRobot v3 dataset per kept episode."""
+"""Terminal teleoperation on a bench task (pick_place or stack): one LeRobot v3 dataset per kept episode."""
 import hashlib
 import queue
 import shutil
@@ -12,6 +12,10 @@ import numpy as np
 from xert.spec import load_spec
 
 TASK = "Pick up the orange block and place it in the green tray"
+# LeRobot `task` descriptions per task_id; task_id itself goes to the manifest and the per-frame journal.
+TASK_TEXT = {"pick_place": TASK, "stack": "Pick up the orange block and stack it on the blue block"}
+SUCCESS_PROVENANCE = {"pick_place": "native bench contact rule (cpp/src/env.cpp Env::step)",
+                      "stack": "Python stack rule (xert/tasks/stack.py StackTask)"}
 KEYS = "Space starts/stops an episode, d discards it, Esc is e-stop and quit"
 
 
@@ -63,9 +67,9 @@ def open_viewer(model):
 
 
 def run_session(source, spec_path, output, make_mapper, *, provenance, spec_bytes=None, keys=read_key,
-                clock=time.perf_counter, sleep=time.sleep, viewer=None):
+                clock=time.perf_counter, sleep=time.sleep, viewer=None, task_id="pick_place"):
     """Caller owns `source` and `viewer`. Bench seed = kept-episode index, so a discarded attempt retries its seed."""
-    from xert.backends.bench import BenchBackend
+    from xert.backends.base import task_backend
     from xert.data.recorder import RuntimeRecorder
     from .loop import run_loop
     spec_bytes = Path(spec_path).read_bytes() if spec_bytes is None else spec_bytes
@@ -81,10 +85,11 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
             sleep(.05)
         if action == "quit":
             return kept
-        backend = BenchBackend(spec, seed)
+        backend = task_backend(spec, seed, task_id)
         mapper = make_mapper(backend)
-        recorder = RuntimeRecorder(spec_path, backend.read_state(), output / f"episode_{seed:06d}", task=TASK,
-                                   source={**provenance, "bench_seed": seed, "bench": backend.env.metadata()},
+        recorder = RuntimeRecorder(spec_path, backend.read_state(), output / f"episode_{seed:06d}",
+                                   task=TASK_TEXT[task_id], task_id=task_id,
+                                   source={**provenance, "bench_seed": seed, "bench": backend.metadata()},
                                    spec_bytes=spec_bytes, task_success=True,
                                    environment_state=(backend.object_names, backend.object_state()))
         if viewer:
@@ -96,6 +101,7 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
                 return False  # E-stop hold tick after Escape; that recording is already ended.
             record["success"] = bool(backend.info["success"])
             record["environment_state"] = backend.object_state()  # Same tick as record["q"]; stored pre-action.
+            record["task_id"] = task_id  # Per-frame provenance in the journal (xert_frames.jsonl "runtime").
             recorder(record)
             if viewer:
                 viewer.show(backend.data)
@@ -112,7 +118,7 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
 
         print("Recording.", flush=True)
         try:
-            run_loop(borrowed, backend, mapper, backend.env.config["horizon"] / spec.control_hz,
+            run_loop(borrowed, backend, mapper, backend.config["horizon"] / spec.control_hz,
                      clock=clock, sleep=sleep, on_step=step, stop_requested=lambda: end == ["quit"])
         except BaseException as exc:
             if not recorder.closed:
@@ -146,7 +152,7 @@ def run_session(source, spec_path, output, make_mapper, *, provenance, spec_byte
 
 
 def execute(args):
-    from xert.backends.bench import BenchBackend
+    from xert.backends.base import task_backend
     from xert.eval.ledger import source_provenance
     from xert.retarget.calibrate import CalibratedMapper, load_profile
     from xert.sources.webcam_mediapipe import WebcamSource
@@ -162,7 +168,8 @@ def execute(args):
     calibration_bytes, calibration = _calibration(args, model)
     if calibration.get("neutral_pose") != "bench_reset":
         raise ValueError("Teleop needs a bench-reset neutral calibration: xert calibrate --bench")
-    bench = BenchBackend(spec, 0)
+    task_id = getattr(args, "task", "pick_place")
+    bench = task_backend(spec, 0, task_id)
 
     def make_mapper(backend):
         return CalibratedMapper(args.spec, args.profile, calibration, backend,
@@ -174,13 +181,13 @@ def execute(args):
     provenance = {"kind": "webcam", "camera": args.camera, "mirrored": False, "model": model,
                   "profile": profile, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": calibration, "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
-                  "success_rule": "native bench contact rule (cpp/src/env.cpp Env::step)", **source_provenance()}
+                  "success_rule": SUCCESS_PROVENANCE[task_id], **source_provenance()}
     viewer = open_viewer(bench.model) if getattr(args, "viewer", False) else None
     try:
         source = WebcamSource(args.model, model["sha256"], camera=args.camera)
         try:
             run_session(source, args.spec, args.output, make_mapper, provenance=provenance, spec_bytes=spec_bytes,
-                        viewer=viewer)
+                        viewer=viewer, task_id=task_id)
         finally:
             _close(source)
     finally:

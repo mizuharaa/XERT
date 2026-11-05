@@ -136,6 +136,7 @@ def test_checkpoint_records_train_only_normalization_and_provenance(rendered, ch
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     metadata = json.loads((checkpoint / image_act.METADATA).read_text())
     assert metadata["robot"] == "xlerobot_left" and metadata["source_kinds"] == ["scripted"]
+    assert metadata["task_id"] == "pick_place"
     assert metadata["training_episodes"] == [0] and metadata["validation_episodes"] == [1]
     assert [row["epoch"] for row in metadata["history"]] == [1, 2] and metadata["selected_epoch"] == 2
     assert all(row["validation_l1"] is not None for row in metadata["history"])
@@ -165,7 +166,7 @@ def test_live_render_features_equal_the_dataset_features(rendered, checkpoint):
     backend = BenchBackend(load_spec(image_act.SPECS / "xlerobot_left.yaml"), EVAL_SEEDS[0])
     renderer = CameraRenderer(64, "xlerobot_left")
     try:
-        live = image_act.live_frame(backend, renderer, metadata["features"], backend.env.metadata()["observation_names"])
+        live = image_act.live_frame(backend, renderer, metadata["features"])
     finally:
         renderer.close()
     assert set(live) == set(metadata["features"]) >= set(image_act.IMAGE_KEYS)
