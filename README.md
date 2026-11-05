@@ -237,6 +237,14 @@ a measurement yet. The task list and each slice's handoff are in
   carry a `task_id` so stack and pick-and-place data never pool. The scripted
   stacking expert is a `TODO(daniel)`, so scripted collect/evaluate refuse
   `--task stack` until it exists. No stacking result has been measured.
+- **DAgger scaffolding (slice J).** `python -m xert dagger init|iterate` runs
+  the plumbing of a DAgger-style loop on the pick-and-place bench: train on the
+  aggregate, roll out with the scripted expert's action recorded as the label
+  while a mixed action is executed, stage, evaluate on held-out seeds, and
+  commit each iteration through one atomically replaced manifest. The mixing
+  rule, the stopping rule and the training settings are `TODO(daniel)` stubs,
+  so `iterate` refuses until they exist. `init` refuses seed data recorded on
+  an older simulator or a non-default bench. No DAgger result exists.
 - **Image-ACT scaffold (slice G1).** `python -m xert image-act train|evaluate`
   trains official LeRobot ACT on rendered `scene`/`wrist` images and evaluates
   it on the bench, rendering the cameras live each tick. Every training choice
