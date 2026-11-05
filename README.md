@@ -245,9 +245,17 @@ a measurement yet. The task list and each slice's handoff are in
 - **Hardware backend (P6 prep).** `python -m xert hw-dry-run` prints motor
   targets and never opens the bus. See [docs/learn/P6.md](docs/learn/P6.md) for
   the bring-up order and the P6.2 blockers.
-- **ROS 2 Jazzy (slice E).** `ros/xert_ros` is a colcon package with a URDF, RViz
-  and a launch file. Its control loop is a `TODO(daniel)`; CI builds and tests it
-  in `ros:jazzy`. See [ros/xert_ros/README.md](ros/xert_ros/README.md).
+- **ROS 2 Jazzy (slices E and I).** `ros/xert_ros` is a colcon package with a
+  URDF, RViz and a launch file; its control loop is a `TODO(daniel)`.
+  `ros/xert_ros_bridge` adds two rclpy nodes: `xert_bridge` runs XERT's
+  retargeting and safety loop and publishes each safety-checked command on
+  `/xert/joint_commands` (stamped with its generation time), and
+  `xert_sim_follower` drives MuJoCo from those commands and publishes
+  `/joint_states`. The follower is a stand-in, not a controller: it holds on
+  transport loss and never returns to rest by itself. CI builds and tests both
+  packages in `ros:jazzy`, including an end-to-end launch test on a scripted
+  clip. See [ros/xert_ros/README.md](ros/xert_ros/README.md) and
+  [docs/handoff/I-ros-bridge.md](docs/handoff/I-ros-bridge.md).
 
 ## C++17 MuJoCo core
 
