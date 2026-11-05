@@ -131,3 +131,63 @@ def test_iterate_refuses_until_the_rules_exist(seed_collection, tmp_path):
     with pytest.raises(NotImplementedError, match=r"DAgger mixing rule not chosen \(TODO\(daniel\)\)"):
         dagger.iterate(run)
     assert (run / "manifest.json").read_bytes() == before and not (run / "iteration_001").exists()
+
+
+def test_two_iterations_relabel_replay_train_on_labels_and_append(seed_collection, tmp_path, monkeypatch):
+    calls = install_rules(monkeypatch)
+    seen, real_train = [], learning.train
+
+    def spy(episodes, *args, **kwargs):  # The arrays train_model hands the trainer.
+        seen.append(episodes)
+        return real_train(episodes, *args, **kwargs)
+
+    monkeypatch.setattr(learning, "train", spy)
+    run = tmp_path / "run"
+    dagger.init(seed_collection, run, EVAL)
+    first = dagger.iterate(run)
+    probe, *executed_calls = calls  # iterate probes the rule once, with zero actions, before training.
+    assert not probe[0].any() and not probe[1].any()
+    entry = manifest(run)["iterations"][1]
+    assert (entry["iteration"], entry["attempt"], entry["incomplete_attempts"]) == (1, 1, [])
+    assert [ref["seed"] for ref in entry["episodes"]] == first["rollouts"]["seeds"] == [103, 104]
+    store, offset = Store(run / entry["path"] / "dataset"), 0
+    for ref in entry["episodes"]:
+        executed, record = store.load_episode(ref["id"])
+        training, _ = store.load_training_episode(ref["id"])
+        mine = executed_calls[offset:offset + len(executed["actions"])]
+        offset += len(mine)
+        np.testing.assert_array_equal(executed["actions"], [call[4] for call in mine])  # episode.npz = the rule.
+        np.testing.assert_array_equal(training["actions"], [call[1] for call in mine])  # corrective = the expert.
+        assert np.any(executed["actions"] != training["actions"])
+        env = ManipulationEnv(record["config"])
+        env.reset(record["seed"])
+        for label, action in zip(training["actions"], executed["actions"]):  # Expert queried BEFORE each step.
+            np.testing.assert_array_equal(label, np.asarray(env.expert_action(), np.float32))
+            env.step(action)
+        assert pipeline.replay(store, ref["id"])["matched"]  # Replay consumes the executed stream.
+        assert record["source"] == "dagger_policy_rollout"
+        assert {key: record["dagger"][key] for key in ("iteration", "attempt", "seeds", "policy_model_sha256",
+                                                       "expert_implementation_sha256")} == {
+            "iteration": 1, "attempt": 1, "seeds": [103, 104], "policy_model_sha256": first["model"]["model_sha256"],
+            "expert_implementation_sha256": env.implementation_sha256}
+    assert offset == len(executed_calls) and {call[2] for call in executed_calls} == {1}
+    evaluation = first["evaluation"]
+    assert evaluation["seeds"] == EVAL and evaluation["n"] == 2
+    assert evaluation["ci95"] == pipeline.wilson(evaluation["successes"], 2)
+    assert first["aggregate_episodes"] == 5 and (run / entry["report"]).is_file()
+
+    committed, before = files(run / "iteration_001"), manifest(run)
+    second = dagger.iterate(run)
+    assert files(run / "iteration_001") == committed  # A second iteration appends, never overwrites.
+    record = manifest(run)
+    assert record["iterations"][:2] == before["iterations"] and len(record["iterations"]) == 3
+    assert second["iteration"] == 2 and second["aggregate_episodes"] == 7
+    assert second["model"]["training_action_sources"] == ["expert_correction"] * 5
+    for ref, trained in zip(aggregate(run)[:5], seen[-1], strict=True):  # Iteration 2 trained on these arrays.
+        source = Store(run / ref["store"])
+        labels, _ = source.load_training_episode(ref["id"])
+        np.testing.assert_array_equal(trained["actions"], labels["actions"])
+        if ref in entry["episodes"]:
+            assert not np.array_equal(trained["actions"], source.load_episode(ref["id"])[0]["actions"])
+    assert_aggregate_is_clean(run)
+    assert ledger.read_rows() == []
