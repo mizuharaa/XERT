@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from xert.data.cameras import BLOCK, CAMERAS, _recorded_robot
+from xert.data.cameras import CAMERAS, _recorded_robot
 from xert.data.quality import HUMAN_SOURCES
 from xert.eval import ledger
 from xle_workbench.storage import atomic_json, sha256
@@ -316,7 +316,7 @@ def live_frame(backend, renderer, features, native_names):
     import torch
     from xert.eval.gate_experiment import bench_observation
     native = dict(zip(native_names, backend.env._obs()))  # ponytail: private accessor; the native env has no public one.
-    images, _ = renderer.render(backend.read_state().q, [native[name] for name in BLOCK])
+    images, _ = renderer.render(backend.read_state().q, {name: native[name] for name in renderer.object_names})
     return {key: torch.from_numpy(images[key]).permute(2, 0, 1).float().div(255) if key in images
             else torch.from_numpy(bench_observation(backend, feature["names"], native_names))
             for key, feature in features.items()}

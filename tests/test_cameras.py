@@ -66,10 +66,11 @@ def test_scene_state_is_found_by_name_in_both_dataset_layouts():
 
 
 def test_render_is_deterministic_for_a_fixed_state(renderer):
+    from xert.data.cameras import BLOCK
     joints, block = np.array([0, .3, .5, .2, 0, .4]), np.array([.24, -.03, .096, 1, 0, 0, 0])
-    first, _ = renderer.render(joints, block)
-    renderer.render(joints + .2, block + [0, .05, 0, 0, 0, 0, 0])
-    again, achieved = renderer.render(joints, block)
+    first, _ = renderer.render(joints, dict(zip(BLOCK, block)))
+    renderer.render(joints + .2, dict(zip(BLOCK, block + [0, .05, 0, 0, 0, 0, 0])))
+    again, achieved = renderer.render(joints, dict(zip(BLOCK, block)))
     for key, image in first.items():
         assert image.shape == (128, 128, 3) and image.dtype == np.uint8
         np.testing.assert_array_equal(image, again[key])
@@ -79,7 +80,8 @@ def test_render_is_deterministic_for_a_fixed_state(renderer):
 
 def test_sites_are_hidden(renderer):
     import mujoco
-    images, _ = renderer.render(np.array([0, .3, .5, .2, 0, .4]), np.array([.24, -.03, .096, 1, 0, 0, 0]))
+    from xert.data.cameras import BLOCK
+    images, _ = renderer.render(np.array([0, .3, .5, .2, 0, .4]), dict(zip(BLOCK, [.24, -.03, .096, 1, 0, 0, 0])))
     # The grasp marker sits in front of the wrist camera; MuJoCo's default options would draw it.
     renderer.renderer.update_scene(renderer.data, camera="wrist", scene_option=mujoco.MjvOption())
     assert not np.array_equal(renderer.renderer.render(), images["observation.images.wrist"])
