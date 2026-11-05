@@ -218,3 +218,35 @@ def test_drawer_environment_names_are_one_list():
     from xert.tasks import environment_names
     assert environment_names("drawer") == ["drawer.pos", "handle.x", "handle.y", "handle.z",
                                            "grasp.x", "grasp.y", "grasp.z", "time_fraction"]
+
+
+# ---------------------------------------------------------------- DrawerBackend (TaskBackend).
+
+def test_backend_seeds_the_opening_and_reports_the_bench_info_keys():
+    from xert.backends.base import task_backend
+    from xert.spec import load_spec
+    from xert.tasks import environment_names
+    from xert.tasks.drawer import HORIZON, initial_opening
+    from xle_workbench.sim import ROBOTS as BENCH
+    for robot in ROBOTS:
+        spec = load_spec(ROOT / f"xert/spec/{robot}.yaml")
+        first, second = (task_backend(spec, seed, "drawer") for seed in (0, 1))
+        assert first.task_id == "drawer" and first.object_names == environment_names("drawer")
+        state = dict(zip(first.object_names, first.object_state()))
+        assert state["drawer.pos"] == np.float32(initial_opening(0)) != dict(zip(second.object_names, second.object_state()))["drawer.pos"]
+        np.testing.assert_allclose([state[f"handle.{a}"] for a in "xyz"], first.data.geom("handle").xpos, atol=1e-6)
+        np.testing.assert_allclose(first.read_state().q, BENCH[robot]["reset_pose"])
+        meta = first.metadata()
+        assert meta["model_sha256"] == drawer_scene(robot)[1] and meta["horizon"] == HORIZON == first.config["horizon"]
+        assert meta["observation_names"][12:] == first.object_names and meta["success_rule"]["open_m"] == .08
+        assert set(first.observation()) == set(meta["observation_names"])
+        times = []
+        for _ in range(3):
+            before = first.data.time
+            first.send_targets(first.read_state().q, None)
+            times.append(first.data.time - before)
+        np.testing.assert_allclose(times, 1 / 25, rtol=0, atol=1e-9)
+        assert set(first.info) == {"success", "failure_reason", "lifted", "steps", "object_position",
+                                   "object_in_robot_contact", "stable_steps", "drawer_open_fraction"}
+        assert first.info["steps"] == 3 and not first.info["success"] and not first.finished
+        np.testing.assert_allclose(first.limits, spec.position_limits)

@@ -23,7 +23,8 @@ class Backend(Protocol):
 class TaskBackend(Backend, Protocol):
     """One seeded bench-task episode: what teleop, the P5.3 harness and image-ACT evaluate use (review H-02).
 
-    Implemented by BenchBackend (pick_place, native C++ rule) and StackBackend (stack, Python StackTask).
+    Implemented by BenchBackend (pick_place, native C++ rule), StackBackend (stack, Python StackTask) and
+    DrawerBackend (drawer, Python DrawerTask; its info adds drawer_open_fraction).
     `send_targets(q, None)` is allowed: the backend then stamps the command with its own sim time. After each
     send, `info` holds {success, failure_reason, lifted, steps, object_position, object_in_robot_contact} and
     `finished` means further steps are refused.
@@ -43,11 +44,14 @@ class TaskBackend(Backend, Protocol):
 
 
 def task_backend(spec, seed, task_id) -> TaskBackend:
-    """The bench backend for a task_id (xert.tasks.TASKS): one protocol, two implementations."""
+    """The bench backend for a task_id (xert.tasks.TASKS): one protocol, three implementations."""
     if task_id == "pick_place":
         from .bench import BenchBackend
         return BenchBackend(spec, seed)
     if task_id == "stack":
         from .stack import StackBackend
         return StackBackend(spec, seed)
+    if task_id == "drawer":
+        from .drawer import DrawerBackend
+        return DrawerBackend(spec, seed)
     raise ValueError(f"Unknown task_id {task_id!r}")
