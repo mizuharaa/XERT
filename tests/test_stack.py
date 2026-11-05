@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from xert.tasks import environment_names
-from xert.tasks.stack import GAP_M, SETTLE_TICKS, SPAWN, StackTask, spawn, stack_scene
+from xert.tasks.stack import GAP_BELOW_M, GAP_M, SETTLE_TICKS, SPAWN, StackTask, spawn, stack_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 ROBOTS = ("xlerobot_left", "so101")
@@ -101,6 +101,9 @@ def test_each_check_on_hand_built_states(scene):
     assert not apart["contact"] and apart["released"] and not apart["gap"]
     assert not task.checks(place(model, BASE, STACKED + [.009, 0, 0]))["centred"]  # 9 mm > 8 mm half width.
     assert task.checks(place(model, BASE, STACKED + [.0075, 0, 0]))["centred"]
+    sunk = task.checks(place(model, BASE, STACKED - [0, 0, .004]))  # 4 mm into the base: interpenetration.
+    assert sunk["contact"] and not sunk["gap"]
+    assert task.checks(place(model, BASE, STACKED - [0, 0, GAP_BELOW_M - .0002]))["gap"]
     hover = task.checks(place(model, BASE, STACKED + [0, 0, GAP_M + .001]))
     assert not hover["contact"] and not hover["gap"]
     assert not task.checks(place(model, BASE, STACKED, [.011, 0, 0, 0, 0, 0]))["still"]

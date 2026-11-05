@@ -39,8 +39,9 @@ image-ACT scaffold without rewriting them. The plan is `PLAN.md` section H (Code
   - (b) no robot contact on `block`. "Robot" means any body other than the world (table, floor), the tray and
     base_block, the same definition as env.cpp's `held`. A held tick resets the count, so the robot touches the
     block at none of the window's ticks;
-  - (c) |block bottom − base_block top| ≤ 5 mm, from the box corners, so a tilted block is measured correctly.
-    The window is two-sided because MuJoCo's resting contact penetrates about 0.1 mm;
+  - (c) block bottom from 1 mm below to 5 mm above the base_block top, from the box corners, so a tilted block is
+    measured correctly. Resting contact penetrates −0.207 mm (QA's measurement); anything deeper than 1 mm is
+    interpenetration and does not count (tested at 4 mm below);
   - (d) xy centre offset ≤ half a block width (0.008 m, the geom's x half-size);
   - (e) block linear speed < 0.01 m/s and angular speed < 0.1 rad/s.
 

@@ -18,7 +18,9 @@ OFF_TABLE_Z = .04  # cpp/src/env.cpp Env::step: block centre z < .04 m is "fell_
 LIFTED_Z = .145    # cpp/src/env.cpp Env::step: lifted |= block centre z > .145 m.
 REST_Z = .096      # cpp/src/env.cpp Env::reset_state: block centre on the table (top .08 + half height .016).
 # Stack-specific constants (stated in every StackBackend metadata() under "success_rule").
-GAP_M = .005        # (c) |block bottom - base_block top| <= 5 mm.
+GAP_M = .005        # (c) block bottom at most 5 mm above the base_block top ...
+GAP_BELOW_M = .001  # ... and at most 1 mm below it: resting contact penetrates -0.207 mm (QA measurement), while a
+                    # deeper overlap is interpenetration, not a stack.
 LINEAR_SPEED = .01  # (e) block linear speed below 0.01 m/s ...
 ANGULAR_SPEED = .1  # ... and angular speed below 0.1 rad/s.
 # (d) block centre within half a block width of the base centre in xy: the block geom's x half-size, 0.008 m.
@@ -107,7 +109,7 @@ class StackTask:
         top = _z_extent(data, self.base_geom, self.model.geom_size[self.base_geom])[1]
         offset = np.linalg.norm(data.xpos[self.block][:2] - data.xpos[self.base][:2])
         velocity = data.qvel[self.block_dof:self.block_dof + 6]  # Free joint: linear (world), then angular.
-        return {"contact": touching, "released": not held, "gap": bool(abs(bottom - top) <= GAP_M),
+        return {"contact": touching, "released": not held, "gap": bool(-GAP_BELOW_M <= bottom - top <= GAP_M),
                 "centred": bool(offset <= half[0]),
                 "still": bool(np.linalg.norm(velocity[:3]) < LINEAR_SPEED and np.linalg.norm(velocity[3:]) < ANGULAR_SPEED)}
 
@@ -131,9 +133,9 @@ class StackTask:
 
 SUCCESS_RULE = {
     "rule": "xert/tasks/stack.py StackTask: SETTLE_TICKS consecutive control ticks with (a) block-base_block "
-            "contact, (b) no robot contact on block, (c) |block bottom - base top| <= gap_m, (d) xy centre offset "
+            "contact, (b) no robot contact on block, (c) -gap_below_m <= block bottom - base top <= gap_m, (d) xy centre offset "
             "<= half block width, (e) block linear speed < linear_speed and angular speed < angular_speed",
-    "settle_ticks": SETTLE_TICKS, "horizon": HORIZON, "gap_m": GAP_M, "centre_offset_m": "block geom x half-size",
+    "settle_ticks": SETTLE_TICKS, "horizon": HORIZON, "gap_m": GAP_M, "gap_below_m": GAP_BELOW_M, "centre_offset_m": "block geom x half-size",
     "linear_speed_m_s": LINEAR_SPEED, "angular_speed_rad_s": ANGULAR_SPEED, "off_table_z_m": OFF_TABLE_Z,
     "lifted_z_m": LIFTED_Z,
     "sources": {"settle_ticks, off_table_z_m, lifted_z_m, released": "cpp/src/env.cpp Env::step",
