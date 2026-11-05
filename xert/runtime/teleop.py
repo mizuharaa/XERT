@@ -14,8 +14,8 @@ from xert.spec import load_spec
 TASK = "Pick up the orange block and place it in the green tray"
 # LeRobot `task` descriptions per task_id; task_id itself goes to the manifest and the per-frame journal.
 TASK_TEXT = {"pick_place": TASK, "stack": "Pick up the orange block and stack it on the blue block"}
-SUCCESS_RULE = {"pick_place": "native bench contact rule (cpp/src/env.cpp Env::step)",
-                "stack": "Python stack rule (xert/tasks/stack.py StackTask)"}
+SUCCESS_PROVENANCE = {"pick_place": "native bench contact rule (cpp/src/env.cpp Env::step)",
+                      "stack": "Python stack rule (xert/tasks/stack.py StackTask)"}
 KEYS = "Space starts/stops an episode, d discards it, Esc is e-stop and quit"
 
 
@@ -181,7 +181,7 @@ def execute(args):
     provenance = {"kind": "webcam", "camera": args.camera, "mirrored": False, "model": model,
                   "profile": profile, "profile_sha256": hashlib.sha256(profile_bytes).hexdigest(),
                   "calibration": calibration, "calibration_sha256": hashlib.sha256(calibration_bytes).hexdigest(),
-                  "success_rule": SUCCESS_RULE[task_id], **source_provenance()}
+                  "success_rule": SUCCESS_PROVENANCE[task_id], **source_provenance()}
     viewer = open_viewer(bench.model) if getattr(args, "viewer", False) else None
     try:
         source = WebcamSource(args.model, model["sha256"], camera=args.camera)

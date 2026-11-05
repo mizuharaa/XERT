@@ -107,7 +107,11 @@ class StackTask:
 
     def checks(self, data):
         """The six conditions on one state, by name: (a) contact, (b) released (neither block touched by the robot),
-        (b') base_on_table, (c) gap, (d) centred, (e) still. Also "held" (robot on `block`, for info)."""
+        (b') base_on_table, (c) gap, (d) centred, (e) still."""
+        return self._score(data)[0]
+
+    def _score(self, data):
+        """(checks, robot touches `block`): one contact pass serves both the checks and step()'s info."""
         touching, held, base_held = self.contacts(data)
         half = self.model.geom_size[self.block_geom]
         bottom = _z_extent(data, self.block_geom, half)[0]
@@ -119,14 +123,15 @@ class StackTask:
                 "base_on_table": bool(-GAP_BELOW_M <= base_bottom - table_top <= GAP_M),
                 "gap": bool(-GAP_BELOW_M <= bottom - top <= GAP_M),
                 "centred": bool(offset <= half[0]),
-                "still": bool(np.linalg.norm(velocity[:3]) < LINEAR_SPEED and np.linalg.norm(velocity[3:]) < ANGULAR_SPEED)}
+                "still": bool(np.linalg.norm(velocity[:3]) < LINEAR_SPEED and np.linalg.norm(velocity[3:]) < ANGULAR_SPEED)}, held
 
     def step(self, data):
         """Score the state after one control tick; returns the same info keys as the native bench step."""
         if self.finished:
             raise RuntimeError("episode finished; reset before stepping")
         self.steps += 1
-        stacked, (_, held, _) = all(self.checks(data).values()), self.contacts(data)
+        checks, held = self._score(data)
+        stacked = all(checks.values())
         block, base = data.xpos[self.block], data.xpos[self.base]
         self.lifted |= bool(block[2] > LIFTED_Z)
         self.stable_steps = self.stable_steps + 1 if stacked else 0
