@@ -197,8 +197,13 @@ class TestBridgeLaunch(unittest.TestCase):
                              for m in commands), key=lambda c: c[2])
         order = np.argsort(state_stamps)
         expected_states = replay_follower(SPEC, commands_s, list(state_stamps[order]))
-        np.testing.assert_array_less(np.abs(states[order] - expected_states), SPEC.velocity_limits / SPEC.control_hz,
-                                     err_msg=report)
+        errors = np.abs(states[order] - expected_states)
+        # Explicit shape: numpy 1.26's assert_array_less does not broadcast a (6,) bound (CI run 41996812427).
+        bound = np.broadcast_to(SPEC.velocity_limits / SPEC.control_hz, errors.shape)
+        row, joint = np.unravel_index(np.argmax(errors / bound), errors.shape)
+        np.testing.assert_array_less(errors, bound, err_msg=(
+            f'{report}; worst: state {row} ({state_stamps[order][row] - stamps[0]:+.3f} s from the first command) '
+            f'{NAMES[joint]} |measured - replayed| {errors[row, joint]:.4f} rad vs bound {bound[row, joint]:.4f}'))
         self.assertTrue(wait_for(lambda: np.abs(self.latest() - rest).max() < .01, 5), self.latest())
 
         # Malformed commands are rejected; a reordered valid stream proves the subscription is live.
