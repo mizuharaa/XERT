@@ -20,8 +20,10 @@ follows slice H: the same recorder, cameras, quality gate, P5.3 harness and imag
   - A `drawer` body (child of the cabinet) on the slide joint `drawer_slide`, range 0 to `DRAWER_TRAVEL` = 0.12 m
     (0 = closed). Five box panels, 4 mm clearance to the shell on every side, and a cabinet–drawer contact exclude,
     so only the joint guides it. 0.14 m deep, so it stays 2 cm inside the shell at full travel.
-  - Slide dynamics are MuJoCo's own defaults, written out: damping 0, frictionloss 0, armature 0. Density is
-    MuJoCo's default 1000 kg/m³ (drawer mass 0.243 kg before the handle posts). None of this is a measured cabinet.
+  - Slide dynamics are MuJoCo's own defaults, written out: damping 0, frictionloss 0, armature 0. The limit's
+    solref is tightened to (0.004, 1) (see "Solver settings"). Density is MuJoCo's default 1000 kg/m³: the drawer
+    body's `body_subtreemass` is 0.2617 kg in total (panels, handle and posts; measured). None of this is a measured
+    cabinet.
   - `handle`: a horizontal cylinder, radius 10 mm, half-length 35 mm, its axis along the drawer front, 35 mm proud
     of the face, tied to the face by two 8 mm posts (drawer geoms, so touching them counts as holding).
   - Sliding friction 1.0 on every geom, as the bench sets.
@@ -112,8 +114,19 @@ follows slice H: the same recorder, cameras, quality gate, P5.3 harness and imag
 | xlerobot_left | 0.002 s | Newton (2) | 100 | elliptic (1) | 1.0 | implicitfast (3) |
 | so101 | 0.002 s | Newton (2) | 10 | elliptic (1) | 10.0 | implicitfast (3) |
 
-Recorded in every scene's composition (`solver`). The slide limit uses MuJoCo's default soft constraint, so
-`drawer.pos` can sit a few millimetres outside [0, 0.12] m during an impact.
+Recorded in every scene's composition (`solver`). The slide limit is a soft constraint with solref (0.004, 1),
+2× the timestep, set in `SLIDE` (so it is in the composition and the fingerprint). Under a constant 2 N pull from
+closed, arm held at reset, 4 s (`tests/test_drawer.py::test_a_2n_pull_from_closed_overshoots_the_stop_by_at_most_4mm`):
+
+| slide limit solref | peak `drawer.pos` | final under load |
+|---|---|---|
+| (0.02, 1), MuJoCo default | 0.13002 m (+10.02 mm), 1.36 m/s into the stop | 0.12030 m |
+| (0.01, 1) | 0.12501 m (+5.01 mm) | 0.12008 m |
+| (0.004, 1), used | 0.12244 m (+2.44 mm) | 0.12001 m |
+
+Same numbers on both arms (my probe, matching QA's). `info["drawer_open_fraction"]` is `drawer.pos / 0.12`,
+not clamped: it can leave 0..1. Against the stop under the 2 N pull it reads 1.0001 (1.0025 with the old default)
+and peaks at 1.020 during the impact.
 
 ## How to verify (commands run on this branch; numbers below are mine, from this session)
 
@@ -167,6 +180,19 @@ C:\Users\Khang\tmp\reach-public\build\venv-teleop\Scripts\python.exe -m pytest -
 - Done means these pass, after which you delete the markers: `tests/test_drawer_expert.py:28`
   `test_scripted_drawer_success_on_seeds_0_to_8` and `:36` `test_scripted_drawer_success_on_held_out_seeds`
   (10000..10008), both for xlerobot_left and so101.
+- The done tests' rollout copies `backend.data.qpos`/`qvel` before each expert call and fails with
+  `RuntimeError("expert mutated backend.data")` if either changed. RuntimeError is not an expected failure, so an
+  expert that writes `backend.data` fails even while the xfail markers are on. Same guard in the stack done tests.
+
+## Owner decisions applied
+
+- Handle radius stays 10 mm. QA's grip probe (4 s under a 2 N pull): at r = 10, 12 and 13 mm the XLeRobot jaw
+  creeps about the same, ~16.8 mm in the jaw-opening direction and 12.5 mm along the axis. The limit is the XLeRobot
+  gripper actuator (kp 5, forcerange ±0.3 N·m) against so101's (kp 998, ±2.94 N·m); so101 creeps 1.2–1.9 mm. A
+  frictionless 0.262 kg slide needs far less than 2 N.
+- Grasp strategy (closed grip or hook-pull) stays with Daniel's expert.
+- Slide limit solref tightened to (0.004, 1); table under "Solver settings".
+- A shared StackBackend/DrawerBackend base is deferred until a third Python-scored task exists.
 
 ## What is NOT shown
 
@@ -174,6 +200,10 @@ C:\Users\Khang\tmp\reach-public\build\venv-teleop\Scripts\python.exe -m pytest -
 - The drawer's damping, friction loss, armature and mass are MuJoCo defaults, not a measured cabinet.
 - Reach is position-only; approach orientation and arm–cabinet collisions along a path are not measured. The jaw
   check is static geometry, not a simulated grasp.
+- `scripts/drawer_reach.py` counts cabinet-shell contacts at the 3 IK poses only. QA's probe, 13 samples along the
+  travel: xlerobot_left has 0 shell and 0 non-handle drawer contacts, its hinge axis 5.5–8.8° off the handle axis;
+  so101's fixed jaw (`fixed_jaw_box2`) is inside `drawer_front` at 92 % and 100 % travel and its hinge axis is
+  62–90° off the handle axis (position-only IK crosses the jaws over the handle instead of wrapping them).
 - No human data. Every recording in the tests is labelled `scripted`.
 
 ## What a task-aware DAgger would need
