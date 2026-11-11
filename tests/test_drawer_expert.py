@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 
+import numpy as np
 import pytest
 
 from xert.backends.drawer import DrawerBackend
@@ -18,7 +19,11 @@ NOT_DONE = (NotImplementedError, AssertionError)
 def expert_rollout(robot, seed):
     backend = DrawerBackend(load_spec(ROOT / f"xert/spec/{robot}.yaml"), seed)
     while not backend.finished:
-        backend.send_targets(drawer_expert_action(backend), None)
+        qpos, qvel = backend.data.qpos.copy(), backend.data.qvel.copy()
+        q = drawer_expert_action(backend)
+        if not (np.array_equal(qpos, backend.data.qpos) and np.array_equal(qvel, backend.data.qvel)):
+            raise RuntimeError("expert mutated backend.data")  # Not in NOT_DONE: fails even under the xfail marker.
+        backend.send_targets(q, None)
     return backend.info
 
 
