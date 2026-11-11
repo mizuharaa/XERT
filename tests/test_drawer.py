@@ -72,6 +72,23 @@ def test_drawer_slides_horizontally_and_the_arm_starts_clear_of_the_cabinet(scen
     np.testing.assert_allclose(moved / DRAWER_TRAVEL, [np.cos(yaw), np.sin(yaw), 0], atol=1e-12)
 
 
+def test_a_2n_pull_from_closed_overshoots_the_stop_by_at_most_4mm(scene):
+    """Constant 2 N on the slide dof from closed, arm held at reset, 4 s. Measured peak +2.44 mm at solref
+    (0.004, 1); MuJoCo's default (0.02, 1) gave +10.02 mm at 1.36 m/s into the stop."""
+    robot, model, _, _ = scene
+    from xle_workbench.sim import ROBOTS as BENCH
+    slide = model.joint("drawer_slide")
+    np.testing.assert_array_equal(model.jnt_solref[slide.id], SLIDE["solref_limit"])
+    data = place(model, 0., reset_arm(robot))
+    data.ctrl[:] = BENCH[robot]["reset_pose"]
+    data.qfrc_applied[slide.dofadr[0]] = 2.
+    peak = 0.
+    for _ in range(round(4 / model.opt.timestep)):
+        mujoco.mj_step(model, data)
+        peak = max(peak, data.qpos[slide.qposadr[0]])
+    assert DRAWER_TRAVEL < peak <= DRAWER_TRAVEL + .004, f"peak {peak:.5f} m"  # It did reach the stop.
+
+
 def test_both_arms_reach_the_handle_and_the_handle_fits_their_jaws():
     sys.path.insert(0, str(ROOT / "scripts"))
     from drawer_reach import TOLERANCE, jaw_sizing, reach_report

@@ -19,8 +19,9 @@ OPEN_M = .08         # Success needs drawer.pos >= OPEN_M: two thirds of the tra
 SLIDE_SPEED = LINEAR_SPEED  # 0.01 m/s, the stack rule's "still" bound (xert/tasks/stack.py), on the slide joint.
 INITIAL_OPEN = (0., .02)    # reset(seed): drawer.pos uniform in this range, metres (the seeded variation).
 # Slide joint dynamics: MuJoCo's own defaults, written out so a bench default class cannot change them. Not a
-# measured cabinet.
-SLIDE = {"damping": 0., "frictionloss": 0., "armature": 0.}
+# measured cabinet. The limit's solref is tightened from MuJoCo's (0.02, 1) to (0.004, 1), 2x the 0.002 s timestep:
+# a 2 N pull from closed then overshoots the 0.12 m stop by 2.4 mm instead of 10.0 mm (tests/test_drawer.py).
+SLIDE = {"damping": 0., "frictionloss": 0., "armature": 0., "solref_limit": [.004, 1.]}
 # Geometry, metres. Cabinet frame: origin on the table top at the centre of the front opening, +x out of the front.
 SHELL = {"depth": .16, "width": .14, "height": .09, "wall": .006}
 CLEARANCE = .004    # Drawer panels to the shell, on every side: the slide joint alone guides the drawer.
