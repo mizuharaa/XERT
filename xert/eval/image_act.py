@@ -18,9 +18,10 @@ import time
 
 import numpy as np
 
-from xert.data.cameras import CAMERAS, _recorded_robot, _recorded_task
+from xert.data.cameras import CAMERAS, _recorded_robot, _recorded_task, cameras
 from xert.data.quality import HUMAN_SOURCES
 from xert.eval import ledger
+from xert.tasks import TASKS
 from xle_workbench.storage import atomic_json, sha256
 
 IMAGE_KEYS = ("observation.images.scene", "observation.images.wrist")
@@ -130,16 +131,17 @@ def describe(paths):
     tasks = {_recorded_task(root) for root in roots}
     if len(tasks) != 1 or None in tasks:
         raise ValueError(f"Need one bench task; datasets name task_id {sorted(map(str, tasks))}")
+    definitions = cameras(robot, next(iter(tasks)))  # The robot's cameras for this task (drawer: own scene camera).
     if not all((root / "xert_cameras.json").exists() for root in roots):
         raise ValueError("Every dataset must be a render-cameras output (xert_cameras.json)")
     manifests = [json.loads((root / "xert_cameras.json").read_text("utf-8")) for root in roots]
     camera = {"model_sha256": manifests[0]["model_sha256"], "size": manifests[0]["cameras"]["scene"]["height"],
-              "cameras": CAMERAS[robot]}
+              "cameras": definitions}
     for manifest in manifests:  # Evaluation renders with CameraRenderer; the training images must match it.
         if (manifest["model_sha256"] != camera["model_sha256"]
                 or any(manifest["cameras"][name]["height"] != camera["size"]
                        or any(manifest["cameras"][name][key] != value for key, value in definition.items())
-                       for name, definition in CAMERAS[robot].items())):
+                       for name, definition in definitions.items())):
             raise ValueError("Datasets were rendered with other camera definitions, sizes or models than CAMERAS")
     from xle_workbench.sim import ROBOTS
     joints = ROBOTS[robot]["joints"]
@@ -392,9 +394,9 @@ def evaluate(checkpoint, seeds, output, experiment="image_act_v1"):
         raise ValueError("Evaluation seeds must be distinct nonnegative integers")
     if set(seeds) & set(metadata["bench_seeds"]):
         raise ValueError("Evaluation seeds overlap the training demonstrations' bench seeds; held-out states required")
-    if metadata.get("task_id") not in ("pick_place", "stack"):
+    if metadata.get("task_id") not in TASKS:
         raise ValueError("Checkpoint metadata names no bench task_id; retrain it with this version")
-    if CAMERAS[metadata["robot"]] != metadata["camera"]["cameras"]:
+    if cameras(metadata["robot"], metadata["task_id"]) != metadata["camera"]["cameras"]:
         raise ValueError("CAMERAS changed since training; live renders would differ from the training images")
     reason = _ledger_reason(metadata["source_kinds"], len(seeds))
     provenance, checkpoint_sha256 = ledger.source_provenance(), sha256(checkpoint / METADATA)

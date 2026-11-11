@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 import time
 
+from xert.tasks import TASKS
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -25,8 +27,9 @@ def add_commands(commands):
             parser.add_argument("--calibration", type=Path, required=True)
         if name == "teleop":
             parser.add_argument("--viewer", action="store_true", help="Open a read-only MuJoCo window of the bench")
-            parser.add_argument("--task", choices=["pick_place", "stack"], default="pick_place",
-                                help="Bench task (task_id); stack adds base_block and the Python stack rule")
+            parser.add_argument("--task", choices=list(TASKS), default="pick_place",
+                                help="Bench task (task_id); stack adds base_block and the Python stack rule, drawer "
+                                     "replaces block and tray with a cabinet and the Python drawer rule")
         if name == "latency":
             parser.add_argument("--duration", type=float, default=300)
     parser = commands.add_parser("record-motion", help="Explicitly open the selected webcam and save landmarks, not images")

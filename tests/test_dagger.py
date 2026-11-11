@@ -146,6 +146,24 @@ def test_init_refuses_seed_episodes_recorded_under_another_bench_config(seed_col
     assert not (tmp_path / "run").exists()
 
 
+def test_init_refuses_a_drawer_collection_and_takes_no_task(seed_collection, tmp_path, monkeypatch):
+    """Review K-02: DAgger stays pick-and-place only. Episodes naming another task_id are refused, and the CLI has no
+    task option to ask for one."""
+    def drawer(record):
+        record["config"]["task_id"] = "drawer"
+        return record
+
+    edited = edited_copy(seed_collection, tmp_path / "drawer", drawer)
+    with pytest.raises(ValueError, match=r"config differs from the bench in \['task_id'\]"):
+        dagger.init(edited, tmp_path / "run", EVAL)
+    monkeypatch.setattr(sys, "argv", ["xert", "dagger", "init", "--collection", str(seed_collection), "--output",
+                                      str(tmp_path / "run"), "--task", "drawer"])
+    from xert.__main__ import main
+    with pytest.raises(SystemExit):
+        main()
+    assert not (tmp_path / "run").exists()
+
+
 def test_init_refuses_evaluation_seeds_inside_the_demonstrations(seed_collection, tmp_path):
     with pytest.raises(ValueError, match="overlap"):
         dagger.init(seed_collection, tmp_path / "run", [101, 10000])
