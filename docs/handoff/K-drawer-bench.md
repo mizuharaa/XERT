@@ -139,11 +139,14 @@ C:\Users\Khang\tmp\reach-public\build\venv-teleop\Scripts\python.exe -m pytest -
 C:\Users\Khang\tmp\reach-public\build\venv-teleop\Scripts\python.exe -m pytest -q tests/test_gate_experiment.py tests/test_image_act.py tests/test_stack_pipeline.py tests/test_drawer_pipeline.py tests/test_dagger.py
 ```
 
-- Base pytest: 263 passed, 72 skipped, 15 xfailed, 8 subtests (147 s). Baseline at 9c62e9b: 240 / 69 / 11 / 8.
-- ctest: 2/2. Equivalence: 16 seeds identical, max observation difference 0.0.
-- Combined venv-teleop, run in two chunks to keep one process under ~5 minutes: 75 passed, 1 skipped, 4 xfailed
-  (116 s) and 60 passed, 4 xfailed (315 s); together 135 / 1 / 8. Baseline for the 10 listed files: 109 / 1 / 4.
+- Base pytest at 639bdfe: 263 passed, 72 skipped, 15 xfailed, 8 subtests (147 s). Baseline at 9c62e9b: 240 / 69 / 11 / 8.
+  After the QA fix round (f13d8d2, adds the overshoot test on both arms) and on the merge 36f349e: 265 / 72 / 15 / 8 (136 s).
+- ctest: 2/2. Equivalence: 16 seeds identical, max observation difference 0.0 (re-run on the merge).
+- Combined venv-teleop at 639bdfe, run in two chunks to keep one process under ~5 minutes: 75 passed, 1 skipped,
+  4 xfailed (116 s) and 60 passed, 4 xfailed (315 s); together 135 / 1 / 8. Baseline for the 10 listed files: 109 / 1 / 4.
   The XLeRobot camera pin and every stack test are in it and green.
+- On the merge 36f349e, the exact CI file lists: lerobot job list in `.venv-lerobot` 132 passed, 1 skipped, 3 xfailed
+  (397 s); teleop job list in `buildenv-teleop` 178 passed, 1 skipped, 3 xfailed (474 s).
 - `tests/test_drawer.py`: scene composition, vendored checksums, fingerprint per placement, slide direction, reach
   and jaw sizing on both arms, every check on hand-built states, the negative tests, seeding, names, the backend.
 - `tests/test_drawer_pipeline.py`: the K-01 reconstruction (below); the gate harness over a full 600-tick episode;
