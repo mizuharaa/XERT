@@ -1,7 +1,7 @@
 """Slice L: Cartesian grasp-site pose columns for end-effector-space VLAs, appended to a simulated bench dataset.
 
 `observation.state.cartesian` and `action.cartesian` are [x, y, z, roll, pitch, yaw, gripper]: the spec's grasp site
-in the robot's fixed base frame (metres), extrinsic x-y-z Euler radians, gripper 0 = spec closed .. 1 = spec open
+in the robot's fixed base frame (metres), extrinsic x-y-z Euler radians, gripper 0 = spec open .. 1 = spec closed
 (clipped). Forward kinematics only (mj_kinematics on the recorded bench model): a kinematic model pose of the
 simulated arm, never a measurement and never hardware data. Every existing column is copied byte-equal.
 """
@@ -58,8 +58,9 @@ def euler_xyz(matrix):
 
 
 def gripper_fraction(q, gripper):
-    """Unclipped (q - closed) / (open - closed) from the spec's gripper block: 0 closed, 1 open."""
-    return (q - gripper["closed"]) / (gripper["open"] - gripper["closed"])
+    """Unclipped (open - q) / (open - closed) from the spec's gripper block: 0 open, 1 closed (DROID's direction:
+    droid/franka/robot.py reads 1 - width / max_width)."""
+    return (gripper["open"] - q) / (gripper["open"] - gripper["closed"])
 
 
 def clip_gripper(values):
@@ -173,8 +174,9 @@ def _add_one(source, staging, robot, task_id, model, fingerprint, spec, repo_id)
         "base_frame": {"position": base[0].tolist(), "quat_wxyz": base[1].tolist(),
                        "definition": "reference placement of the root body in the world (model.body_pos/body_quat)"},
         "position_units": "metres", "euler": EULER,
-        "gripper": {**gripper, "definition": "(q - closed) / (open - closed), clipped to [0, 1]; 0 = spec closed, "
-                    "1 = spec open; raw joint columns stay in the dataset", "clips": clips},
+        "gripper": {**gripper, "definition": "(open - q) / (open - closed), clipped to [0, 1]; 0 = spec open, "
+                    "1 = spec closed (DROID robot code: 1 - width / max_width); raw joint columns stay in the "
+                    "dataset", "clips": clips},
         "fk": "mujoco.mj_kinematics on the recorded bench model, qpos = recorded joint radians (float32 -> float64)",
         "model_sha256": fingerprint, "spec_sha256": sha256(ROOT / f"xert/spec/{robot}.yaml"),
         "mujoco_version": mujoco.__version__, "lerobot_version": importlib.metadata.version("lerobot"),

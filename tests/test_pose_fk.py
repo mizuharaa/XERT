@@ -148,13 +148,15 @@ def test_a_mixed_axis_case_is_extrinsic_and_an_intrinsic_reading_fails():
 def test_gripper_fraction_endpoints_midpoint_and_counted_clipping():
     for robot in ROOTS:
         gripper = load_spec(ROOT / f"xert/spec/{robot}.yaml").gripper
-        assert gripper_fraction(gripper["closed"], gripper) == 0 and gripper_fraction(gripper["open"], gripper) == 1
+        # DROID's direction: open -> 0, closed -> 1.
+        assert gripper_fraction(gripper["open"], gripper) == 0 and gripper_fraction(gripper["closed"], gripper) == 1
         assert gripper_fraction((gripper["closed"] + gripper["open"]) / 2, gripper) == pytest.approx(.5, abs=1e-15)
     spec = load_spec(ROOT / "xert/spec/so101.yaml")
     low, high = spec.position_limits[spec.joint_names.index("gripper")]
     raw = gripper_fraction(np.array([0, .7, 1.4, high, low]), spec.gripper)
-    assert raw[3] == pytest.approx(1.7453292 / 1.4) and raw[3] > 1.24  # The spec limit is past "open".
+    assert raw[3] == pytest.approx(1 - 1.7453292 / 1.4) and raw[3] < -.24  # The spec limit is past "open".
+    assert raw[4] == pytest.approx(1 + .17453 / 1.4)  # And the lower limit is past "closed".
     clipped, clips = clip_gripper(raw)
-    np.testing.assert_allclose(clipped, [0, .5, 1, 1, 0], rtol=0, atol=1e-15)
+    np.testing.assert_allclose(clipped, [1, .5, 0, 0, 1], rtol=0, atol=1e-15)
     assert clips == {"clipped_frames": 2, "max_excursion": pytest.approx(1.7453292 / 1.4 - 1)}
     assert clip_gripper([0, 1])[1] == {"clipped_frames": 0, "max_excursion": 0.}
