@@ -77,5 +77,10 @@ Already defaulted earlier and unchanged:
 3. `python -m xert map-from-calibration --calibration <robots/so_follower/<id>.json> --poses poses.json --output <fresh map>`; read it, then copy it into `configs/hardware/so101_joint_map.yaml` by hand. `max_speed`/`max_accel` stay yours to choose.
 4. Then `import-lerobot --motor-units degrees --calibration …` and `replay-real` accept real recordings.
 
+## Stop point 2026-11-16: everything left needs the real SO-101 or Daniel
+Agent-buildable work is exhausted at slice L. Scoped but NOT started, because its shape depends on real recordings:
+- **L2, hardware pose path:** `add-pose` for `import-lerobot --motor-units degrees` outputs (radians via the P6 joint map, which is all TBD until P6.1 measures the arm). The hard part is keeping the real camera videos while appending the Cartesian columns: LeRobot v3 stores per-feature stats in `meta/episodes/*.parquet` and `meta/stats.json`, so appending features means Parquet + stats surgery, or re-encoding the videos. Decide after the first real recording whether (a) Cartesian columns are appended offline (L2), or (b) FK is logged at capture time by a LeRobot robot wrapper that records `observation.state.cartesian` directly, which needs the arm.
+- **Owner decisions open:** 25 Hz -> 15 Hz for Praxis (resample vs re-record), pose point (XERT `grasp` site vs Praxis's Franka flange), `xert hw-read` needs an explicit OK to open the servo bus.
+
 ## Waiting on Daniel (hands-on)
 P3.5 live webcam runs, P3.6 clip, P4.1 live check, P4.2 demos, P5.2 thresholds, P5.3 run, demo video, SO-101 bring-up (P6.1/P6.2 per `docs/learn/P6.md`).
