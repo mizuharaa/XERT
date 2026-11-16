@@ -11,11 +11,12 @@ def main():
     ledger = commands.add_parser("ledger")
     ledger.add_subparsers(dest="operation", required=True).add_parser("show")
     from .runtime.cli import add_commands, execute
-    from .data import cameras, lerobot_io, map_from_calibration, quality
+    from .data import cameras, lerobot_io, map_from_calibration, pose, quality
     from .eval import dagger, image_act, replay_real
     add_commands(commands)
     quality.add_command(commands)
     cameras.add_command(commands)
+    pose.add_command(commands)
     lerobot_io.add_commands(commands)
     replay_real.add_command(commands)
     map_from_calibration.add_command(commands)
@@ -27,6 +28,9 @@ def main():
         return
     if args.command == "render-cameras":
         cameras.execute(args)
+        return
+    if args.command == "add-pose":
+        pose.execute(args)
         return
     if args.command in ("export-lerobot", "import-lerobot", "to-store"):
         lerobot_io.execute(args)
