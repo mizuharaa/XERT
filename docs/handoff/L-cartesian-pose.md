@@ -109,6 +109,11 @@ every command exit code 0:
 | `tests/test_add_pose.py` (lerobot env) | 13 passed |
 | LeRobot gate, four files in two runs | 27 + 14 = 41 passed (52 s + 29 s) |
 
+On the merge into `integration/sim-mvp` (5191416), the integrator re-ran: base env whole suite 274 passed, 73 skipped,
+15 xfailed (118 s); ctest 2/2; equivalence 16 seeds, max difference 0.0; the CI lerobot job's 16-file list in
+`.venv-lerobot` 145 passed, 1 skipped, 3 xfailed (354 s); the CI teleop job's 22-file list in `buildenv-teleop`
+191 passed, 1 skipped, 3 xfailed (374 s). All exit 0.
+
 From the `xert_pose.json` files that `tests/test_add_pose.py` wrote in that run (`--basetemp` kept them), 3-frame
 scripted fixtures (not demonstrations). The FK errors and clip counts are the same as before the fix round:
 
