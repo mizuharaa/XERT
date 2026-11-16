@@ -185,6 +185,8 @@ def _add_one(source, staging, robot, task_id, model, fingerprint, spec, repo_id)
                        "definition": "reference placement of the root body in the world (model.body_pos/body_quat), "
                                      "times base_frame_correction (wxyz, in the root frame); z up, joint 1 about -z"},
         "position_units": "metres", "euler": EULER,
+        # Roll and yaw are not unique at pitch = +-pi/2; how close this dataset comes, per column.
+        "max_abs_pitch_rad": {key: float(np.max(np.abs(np.stack(values)[:, 4]))) for key, values in written.items()},
         "gripper": {**gripper, "definition": "(open - q) / (open - closed), clipped to [0, 1]; 0 = spec open, "
                     "1 = spec closed (DROID robot code: 1 - width / max_width); raw joint columns stay in the "
                     "dataset", "clips": clips},

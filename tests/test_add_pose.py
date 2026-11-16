@@ -100,6 +100,8 @@ def test_export_gains_two_pose_columns_and_keeps_every_source_column(exports, po
     joints = column(old, "observation.state")[:, :6].astype(np.float32)
     np.testing.assert_array_equal(column(new, "observation.state.cartesian").astype(np.float32),
                                   np.stack([fk(robot, "pick_place", q.astype(np.float64)) for q in joints]))
+    for key in COLUMNS:
+        assert manifest["max_abs_pitch_rad"][key] == pytest.approx(np.max(np.abs(column(new, key)[:, 4])))
     low, high = np.asarray(manifest["action"]["action_joint_ranges_radians"]).T
     decoded = low + (column(old, "action").astype(np.float32).astype(np.float64) + 1) / 2 * (high - low)
     np.testing.assert_array_equal(column(new, "action.cartesian").astype(np.float32),
