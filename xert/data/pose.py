@@ -20,9 +20,12 @@ from xert.data.lerobot_io import _fresh, _hashes
 from xle_workbench.storage import atomic_json, sha256
 
 ROOT = Path(__file__).resolve().parents[2]
-# Root body of each bench arm (lerobot_export.PROFILES robots); its placement in the world is the base frame.
-# xlerobot_left's root carries joint 1 (Rotation_L) itself, so only its reference placement is fixed, never xquat.
-ROOTS = {"so101": "base", "xlerobot_left": "Rotation_Pitch"}
+# Root body of each bench arm (lerobot_export.PROFILES robots) and a fixed wxyz correction: base frame = the root's
+# reference placement in the world, then the correction. xlerobot_left's root carries joint 1 (Rotation_L) itself, so
+# only its reference placement is fixed, never xquat; its local y is world up, so the correction (-90 degrees about
+# x: base x = root x, base y = root -z, base z = root y) makes z up and joint 1 the base -z axis, as on the SO-101.
+ROOTS = {"so101": ("base", (1., 0., 0., 0.)),
+         "xlerobot_left": ("Rotation_Pitch", (np.sqrt(.5), -np.sqrt(.5), 0., 0.))}
 NAMES = ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]
 FEATURE = {"dtype": "float32", "shape": (7,), "names": NAMES}
 COLUMNS = {"observation.state.cartesian": "observation.state", "action.cartesian": "action"}
@@ -35,11 +38,16 @@ HARDWARE = ("add-pose takes simulator recordings and exports only: admission nee
 
 
 def base_transform(model, robot):
-    """(position, wxyz quaternion) of the robot's root body in the world: its constant reference placement."""
-    root = model.body(ROOTS[robot]).id
+    """(position, wxyz quaternion) of the base frame in the world: the robot's root body's constant reference
+    placement, rotated by the robot's fixed correction."""
+    import mujoco
+    name, correction = ROOTS[robot]
+    root = model.body(name).id
     if model.body_parentid[root] != 0:
-        raise ValueError(f"{ROOTS[robot]} is not a worldbody child; its placement is not the base frame")
-    return model.body_pos[root].copy(), model.body_quat[root].copy()
+        raise ValueError(f"{name} is not a worldbody child; its placement is not the base frame")
+    quat = np.zeros(4)
+    mujoco.mju_mulQuat(quat, model.body_quat[root], np.asarray(correction))
+    return model.body_pos[root].copy(), quat
 
 
 def in_base(position, matrix, base):
@@ -170,9 +178,12 @@ def _add_one(source, staging, robot, task_id, model, fingerprint, spec, repo_id)
         "features": {key: {**FEATURE, "shape": list(FEATURE["shape"]), "from": f"FK of {stream}"}
                      for key, stream in COLUMNS.items()},
         "action": {**semantics, "executed_action": "xert.executed_action (exports) gets no Cartesian column"},
-        "site": site_name, "root_body": ROOTS[robot],
+        "site": site_name, "root_body": ROOTS[robot][0],
         "base_frame": {"position": base[0].tolist(), "quat_wxyz": base[1].tolist(),
-                       "definition": "reference placement of the root body in the world (model.body_pos/body_quat)"},
+                       "root_quat_wxyz": model.body_quat[model.body(ROOTS[robot][0]).id].tolist(),
+                       "base_frame_correction": list(ROOTS[robot][1]),
+                       "definition": "reference placement of the root body in the world (model.body_pos/body_quat), "
+                                     "times base_frame_correction (wxyz, in the root frame); z up, joint 1 about -z"},
         "position_units": "metres", "euler": EULER,
         "gripper": {**gripper, "definition": "(open - q) / (open - closed), clipped to [0, 1]; 0 = spec open, "
                     "1 = spec closed (DROID robot code: 1 - width / max_width); raw joint columns stay in the "

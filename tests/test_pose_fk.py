@@ -54,11 +54,20 @@ def arm(robot, task_id="pick_place"):
 @pytest.mark.parametrize("robot", ROOTS)
 def test_base_frame_is_the_root_reference_placement_and_never_moves(robot):
     model, data, qids, site, spec = arm(robot)
-    base, root = base_transform(model, robot), model.body(ROOTS[robot]).id
+    base, root = base_transform(model, robot), model.body(ROOTS[robot][0]).id
     assert model.body_parentid[root] == 0 and spec.sites == ("grasp",)
-    if robot == "so101":  # The bench placement of the Menagerie arm (yaw pi about world z).
+    np.testing.assert_array_equal(base[0], model.body_pos[root])
+    if robot == "so101":  # The bench placement of the Menagerie arm (yaw pi about world z), no correction.
         np.testing.assert_array_equal(base[0], SO101_BASE["pos"])
         np.testing.assert_array_equal(base[1], SO101_BASE["quat"])
+    else:  # Root placement, then -90 degrees about the root's x.
+        expected = np.zeros(4)
+        mujoco.mju_mulQuat(expected, model.body_quat[root], np.array([np.sqrt(.5), -np.sqrt(.5), 0, 0]))
+        np.testing.assert_array_equal(base[1], expected)
+    # z is up for both robots. Not 1e-6 for xlerobot_left: its vendored root quat (0.499998, 0.5, 0.500002, 0.5) is
+    # 4e-6 off the exact 120-degree rotation, and that tilt stays in the model.
+    _, rotation = in_base(np.zeros(3), np.eye(3), base)
+    np.testing.assert_allclose(rotation @ [0, 0, 1], [0, 0, 1], rtol=0, atol=1e-5)
     rng = np.random.default_rng(0)
     for _ in range(5):  # "An episode": the transform is the same whatever the joints do.
         site_pose(model, data, qids, site, base, rng.uniform(*spec.position_limits.T))
@@ -71,9 +80,9 @@ def test_base_frame_is_the_root_reference_placement_and_never_moves(robot):
     q[0] = .5
     site_pose(model, data, qids, site, base, q)
     if robot == "xlerobot_left":  # Joint 1 sits on the root body: its LIVE frame turns with Rotation_L.
-        assert same_rotation(data.xquat[root], base[1]) > .1
+        assert same_rotation(data.xquat[root], model.body_quat[root]) > .1
     else:
-        assert same_rotation(data.xquat[root], base[1]) < 1e-12
+        assert same_rotation(data.xquat[root], model.body_quat[root]) < 1e-12
 
 
 @pytest.mark.parametrize("robot", ROOTS)
@@ -93,16 +102,11 @@ def test_joint_1_alone_turns_the_pose_about_its_axis_in_the_base_frame(robot):
     assert abs(a @ axis - b @ axis) < 1e-12  # Height along the axis is kept,
     np.testing.assert_allclose(np.linalg.norm(a - (a @ axis) * axis), np.linalg.norm(b - (b @ axis) * axis),
                                rtol=0, atol=1e-12)  # and so is the distance from it.
-    if robot == "so101":  # shoulder_pan turns about base -z: x, y and yaw change; z, roll, pitch do not.
-        np.testing.assert_allclose(axis, [0, 0, -1], atol=1e-12)
-        assert np.all(np.abs(second[[0, 1]] - first[[0, 1]]) > 1e-3)
-        np.testing.assert_allclose(second[[2, 3, 4]], first[[2, 3, 4]], rtol=0, atol=1e-12)
-        np.testing.assert_allclose(np.angle(np.exp(1j * (second[5] - first[5]))), -.4, rtol=0, atol=1e-12)
-    else:
-        # Measured: Rotation_Pitch's placement turns local y to world up, so Rotation_L is the base -y axis and moves
-        # base x and z; in this frame "vertical" is y, not z (an owner decision for DROID-style z-up consumers).
-        np.testing.assert_allclose(axis, [0, -1, 0], atol=1e-5)
-        assert np.all(np.abs(second[[0, 2]] - first[[0, 2]]) > 1e-3) and abs(second[1] - first[1]) < 1e-5
+    # On both robots joint 1 turns about base -z: x, y and yaw change; z, roll, pitch do not.
+    np.testing.assert_allclose(axis, [0, 0, -1], rtol=0, atol=1e-12)
+    assert np.all(np.abs(second[[0, 1]] - first[[0, 1]]) > 1e-3)
+    np.testing.assert_allclose(second[[2, 3, 4]], first[[2, 3, 4]], rtol=0, atol=1e-12)
+    np.testing.assert_allclose(np.angle(np.exp(1j * (second[5] - first[5]))), -.4, rtol=0, atol=1e-12)
 
 
 def test_frame_conversion_of_a_hand_built_pose():

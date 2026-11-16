@@ -69,7 +69,7 @@ def test_export_gains_two_pose_columns_and_keeps_every_source_column(exports, po
     manifest = json.loads((output / "xert_pose.json").read_text())
     assert result[source.name]["frames"] == 3 and manifest["verification"]["grasp_world_max_error_m"] <= 1e-5
     assert manifest["pose"] == "kinematic model pose of the simulated arm" and manifest["hardware"] is False
-    assert manifest["root_body"] == ROOTS[robot] and manifest["site"] == "grasp" and manifest["task_id"] == "pick_place"
+    assert manifest["root_body"] == ROOTS[robot][0] and manifest["site"] == "grasp" and manifest["task_id"] == "pick_place"
     assert manifest["source_sha256"] == io._hashes(source) and manifest["model_sha256"] == camera_model(robot)[1]
     old, new = _read_table(source), _read_table(output)
     # Every source column, the AUTOMATIC ones (timestamp, indices) included, byte-equal.
