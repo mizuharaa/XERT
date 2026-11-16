@@ -79,7 +79,11 @@ def test_export_gains_two_pose_columns_and_keeps_every_source_column(exports, po
         if path.is_file():
             assert (output / path.name).read_bytes() == path.read_bytes()
     loaded, original = LeRobotDataset("xert/runtime", root=output), LeRobotDataset("xert/runtime", root=source)
-    for key in COLUMNS:
+    info = json.loads((output / "meta/info.json").read_text())
+    for key in COLUMNS:  # Literal contract, not the module's own constant.
+        assert info["features"][key] == {"dtype": "float32", "shape": [7],
+                                         "names": ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]}
+        assert str(new.schema.field(key).type.value_type) == "float"  # Arrow float32 in the Parquet.
         assert loaded.features[key] == FEATURE and loaded[0][key].shape == (7,)
         assert str(loaded[0][key].dtype) == "torch.float32"
     assert loaded[0]["task"] == original[0]["task"]
@@ -96,6 +100,42 @@ def test_export_gains_two_pose_columns_and_keeps_every_source_column(exports, po
     joints = column(old, "observation.state")[:, :6].astype(np.float32)
     np.testing.assert_array_equal(column(new, "observation.state.cartesian").astype(np.float32),
                                   np.stack([fk(robot, "pick_place", q.astype(np.float64)) for q in joints]))
+    low, high = np.asarray(manifest["action"]["action_joint_ranges_radians"]).T
+    decoded = low + (column(old, "action").astype(np.float32).astype(np.float64) + 1) / 2 * (high - low)
+    np.testing.assert_array_equal(column(new, "action.cartesian").astype(np.float32),
+                                  np.stack([fk(robot, "pick_place", q) for q in decoded]))
+
+
+def test_action_is_decoded_with_the_recorded_ranges_not_the_spec_limits(exports, tmp_path):
+    # Both benches record ranges equal to their spec limits, so only changed ranges tell the two apart.
+    source = shutil.copytree(exports["so101"], tmp_path / "ranges")
+    changed = [[-1., 1.], [-1., 1.], [-1., 1.], [-1., 1.], [-1., 1.], [0., 1.]]
+    edit(source / "xert_export.json", lambda m: [episode["simulation"].update(action_joint_ranges_radians=changed)
+                                                  for episode in m["source_episodes"]])
+    add_pose(source, tmp_path / "out")
+    table = _read_table(tmp_path / "out")
+    low, high = np.asarray(changed).T
+    decoded = low + (column(table, "action").astype(np.float32).astype(np.float64) + 1) / 2 * (high - low)
+    np.testing.assert_array_equal(column(table, "action.cartesian").astype(np.float32),
+                                  np.stack([fk("so101", "pick_place", q) for q in decoded]))
+
+
+def test_gripper_beyond_the_spec_interval_is_clipped_and_counted_in_the_dataset(exports, tmp_path, monkeypatch):
+    import dataclasses
+    from xert import spec as specs
+    real = specs.load_spec
+
+    def narrowed(path, **kwargs):  # The so101 hold keeps its gripper at 1.4 rad; "open" moves to 1.0.
+        loaded = real(path, **kwargs)
+        return dataclasses.replace(loaded, gripper={**loaded.gripper, "open": 1.0})
+    monkeypatch.setattr(specs, "load_spec", narrowed)
+    add_pose(exports["so101"], tmp_path / "out")
+    table, manifest = _read_table(tmp_path / "out"), json.loads((tmp_path / "out/xert_pose.json").read_text())
+    for key in COLUMNS:
+        gripper = column(table, key)[:, 6]
+        assert np.all((gripper >= 0) & (gripper <= 1))
+        clips = manifest["gripper"]["clips"][key]
+        assert clips["clipped_frames"] == 3 and clips["max_excursion"] == pytest.approx(.4, abs=1e-6)
 
 
 def test_action_cartesian_is_fk_of_the_decoded_training_labels_not_the_executed_stream(exports, posed):
@@ -177,6 +217,18 @@ def test_refusals_of_simulated_inputs(exports, posed, sessions, tmp_path):
     edit(missing / "meta/info.json", lambda info: info["features"]["observation.state"]["names"].__setitem__(
         0, "joint_position.renamed"))
     refused(missing, tmp_path / "out", r"lacks \['joint_position.Rotation_L'\]")
+    no_grasp = shutil.copytree(source, tmp_path / "no-grasp")
+    edit(no_grasp / "meta/info.json", lambda info: info["features"]["observation.state"]["names"].__setitem__(
+        info["features"]["observation.state"]["names"].index("grasp.x"), "grasp.renamed"))
+    refused(no_grasp, tmp_path / "out", r"lacks \['grasp.x'\]")
+    swapped = shutil.copytree(source, tmp_path / "swapped")  # Two joint columns read in each other's place.
+
+    def swap(info):
+        names = info["features"]["observation.state"]["names"]
+        names[1], names[2] = names[2], names[1]
+    edit(swapped / "meta/info.json", swap)
+    refused(swapped, tmp_path / "out", "FK grasp position disagrees")
+    assert not any(path.name.startswith(".xert-pose-") for path in tmp_path.iterdir())  # Staging removed too.
     other = shutil.copytree(source, tmp_path / "other")
     edit(other / "xert_export.json", lambda m: m["source_episodes"][0]["simulation"].update(model_sha256="0" * 64))
     refused(other, tmp_path / "out", "not recorded on the current xlerobot_left pick_place bench model")
@@ -193,6 +245,10 @@ def test_refusals_of_simulated_inputs(exports, posed, sessions, tmp_path):
     shutil.copytree(sessions["pick_place"], two / "episode_000001")
     edit(two / "episode_000001/xert_recording.json", lambda m: m.update(embodiment="so101"))
     refused(two, tmp_path / "out", "one bench robot")
+    tasks = tmp_path / "two-tasks"
+    shutil.copytree(sessions["pick_place"], tasks / "episode_000000")
+    shutil.copytree(sessions["stack"], tasks / "episode_000001")
+    refused(tasks, tmp_path / "out", "one bench task per run")
 
 
 def test_hardware_imports_are_refused_with_the_reason(tmp_path):
