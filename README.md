@@ -216,6 +216,12 @@ a measurement yet. The task list and each slice's handoff are in
     `so_follower` hardware.
   - `python -m xert to-store --frames <import> --output <fresh>` makes derived
     Store episodes.
+- **Cartesian pose columns (slice L).** `python -m xert add-pose --dataset
+  <export|recording|session> --output <fresh>` appends `observation.state.cartesian`
+  and `action.cartesian` (`[x, y, z, roll, pitch, yaw, gripper]`, the Praxis/DROID
+  layout): forward kinematics of the `grasp` site in the arm's fixed base frame.
+  Simulation data only; run it before `render-cameras`. See
+  [docs/handoff/L-cartesian-pose.md](docs/handoff/L-cartesian-pose.md).
 - **Real-vs-sim replay (slice D).** `python -m xert replay-real --dataset <import>
   --output <fresh> [--ledger]` replays recorded goal positions open-loop on the
   MuJoCo SO-101 and writes RMSE per joint per episode, plus plots.
