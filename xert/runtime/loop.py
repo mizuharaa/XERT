@@ -64,6 +64,10 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
                 backend.send_targets(command.q, tick * dt)
             sent_any |= emitted
             state = backend.read_state()
+            if getattr(state, "measured", True) is False:
+                # Commanded (hardware) state only: what was really sent after the motor clamp becomes the
+                # controller's state. Measured sim state is never fed back (its PD lag would enter the limiter).
+                command.events.extend(safety.observe(state.q))
             applied = clock()
             valid = frame is not None and desired is not None and command.phase == "live"
             sample = valid and frame.sequence not in applied_sequences

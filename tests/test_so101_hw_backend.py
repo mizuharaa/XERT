@@ -205,6 +205,38 @@ def test_estop_on_first_tick_emits_no_command(tmp_path):
     assert records[0]["command"] == SPEC.rest.tolist()
 
 
+# no-clamp: 1e3 units/s, 1e5 units/s^2 never bind; 1e6 would, by ~2e-12 rad, through braking_speed's bisection step.
+@pytest.mark.parametrize("limits", [QA, {**QA, "max_speed": 1e3, "max_accel": 1e5}], ids=["clamp", "no-clamp"])
+def test_controller_tracks_the_applied_hardware_command(tmp_path, monkeypatch, limits):
+    from xert.runtime import loop
+    controllers, checked, requested = [], [], []
+
+    class Watched(SafetyController):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            controllers.append(self)
+
+    monkeypatch.setattr(loop, "SafetyController", Watched)
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **limits), echo=lambda _: None)
+    clock = SimClock()
+
+    def on_step(record):
+        safety = controllers[0]
+        assert np.array_equal(safety.q, backend.q) and np.array_equal(safety.velocity, backend.qd)
+        checked.append(any(e["kind"] == "observe" for e in record["events"]))
+        requested.append(record["command"])
+
+    target = SPEC.rest + .5
+    run_loop(FreshFrames(clock), backend, SimpleNamespace(map=lambda f: target), 1, clock=clock,
+             sleep=clock.sleep, on_step=on_step)
+    assert len(checked) == 25
+    if limits is QA:  # 30 units/s at 57.3 units/rad is slower than the spec's 1 rad/s: the motor clamp binds.
+        assert any(checked)
+    else:  # Nothing binds: observe changes q only by the motor-unit round trip, never by an event.
+        assert not any(checked)
+        np.testing.assert_allclose(backend.q, requested[-1], rtol=0, atol=1e-12)
+
+
 def test_joint_map_ids_and_motor_names_are_validated():
     for bad, message in (({"id": 0}, "1..253"), ({"id": 254}, "1..253"), ({"id": True}, "1..253"),
                          ({"id": "3"}, "1..253"), ({"motor": ""}, "nonempty"), ({"id": 1}, "distinct")):
