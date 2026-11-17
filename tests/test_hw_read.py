@@ -62,11 +62,17 @@ def lerobot_normalize(calibration, ids_values):
 class FakeBus:
     """Records every method call; any other attribute (write, enable_torque, ...) fails the test."""
 
-    def __init__(self, port, calibration, ticks):
+    def __init__(self, port, calibration, ticks, fail=None):
         self.port, self.calibration, self.ticks, self.calls = port, calibration, ticks, []
+        self.fail, self.is_connected = fail, False  # is_connected mirrors MotorsBus: the port is open.
 
     def connect(self, *args, **kwargs):
         self.calls.append(("connect", args, kwargs))
+        if self.fail == "open":
+            raise ConnectionError("fake: port did not open")
+        self.is_connected = True
+        if self.fail == "handshake":  # MotorsBus._assert_motors_exist raises RuntimeError with the port open.
+            raise RuntimeError("fake: motor check failed")
 
     def sync_read(self, *args, **kwargs):
         self.calls.append(("sync_read", args, kwargs))
@@ -78,6 +84,7 @@ class FakeBus:
 
     def disconnect(self, *args, **kwargs):
         self.calls.append(("disconnect", args, kwargs))
+        self.is_connected = False
 
     def __getattr__(self, name):
         raise AssertionError(f"hw-read touched bus.{name}")
@@ -85,13 +92,13 @@ class FakeBus:
 
 @pytest.fixture
 def buses(monkeypatch):
-    made, ticks = [], dict(TICKS)
+    state = SimpleNamespace(made=[], ticks=dict(TICKS), fail=None)
 
     def factory(port, calibration):
-        made.append(FakeBus(port, calibration, ticks))
-        return made[-1]
+        state.made.append(FakeBus(port, calibration, state.ticks, state.fail))
+        return state.made[-1]
     monkeypatch.setattr(hw_read, "_bus", factory)
-    return SimpleNamespace(made=made, ticks=ticks)
+    return state
 
 
 def read(tmp_path, joint_map_path=None, name="read.json"):
@@ -185,6 +192,25 @@ def test_motor_set_mismatch_is_refused_and_the_port_still_closes_without_torque_
     assert [c[0] for c in buses.made[0].calls] == ["connect", "sync_read", "disconnect"]
     assert buses.made[0].calls[-1] == ("disconnect", (), {"disable_torque": False})
     assert not (tmp_path / "read.json").exists()
+
+
+def test_a_failed_handshake_still_closes_the_port_without_torque_writes(tmp_path, buses):
+    buses.fail = "handshake"
+    with pytest.raises(RuntimeError, match="motor check failed"):
+        read(tmp_path)
+    assert buses.made[0].calls == [("connect", (), {}), ("disconnect", (), {"disable_torque": False})]
+    buses.fail = "open"  # Nothing opened: nothing to close, and the open error is the one raised.
+    with pytest.raises(ConnectionError, match="did not open"):
+        read(tmp_path)
+    assert buses.made[1].calls == [("connect", (), {})] and not (tmp_path / "read.json").exists()
+
+
+def test_other_lerobot_versions_are_refused_before_any_bus_object_exists(monkeypatch):
+    monkeypatch.setitem(sys.modules, "lerobot", SimpleNamespace(__version__="0.7.0"))
+    for name in ("lerobot.motors", "lerobot.motors.feetech"):
+        monkeypatch.setitem(sys.modules, name, None)  # Importing them would fail the test.
+    with pytest.raises(RuntimeError, match="LeRobot 0.6.1 only; installed 0.7.0"):
+        hw_read._bus("COM7", CALIBRATION)
 
 
 def test_installed_lerobot_bus_matches_the_calls_and_table_hw_read_uses():

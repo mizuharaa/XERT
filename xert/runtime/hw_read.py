@@ -14,10 +14,14 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
+LEROBOT = "0.6.1"
 BUS_CALLS = ["connect()", 'sync_read("Present_Position", normalize=False)', "disconnect(disable_torque=False)"]
 
 
 def _bus(port, calibration):
+    import lerobot
+    if lerobot.__version__ != LEROBOT:  # The no-writes reading above is of 0.6.1's source only.
+        raise RuntimeError(f"hw-read is verified against LeRobot {LEROBOT} only; installed {lerobot.__version__}")
     from lerobot.motors import Motor, MotorCalibration, MotorNormMode
     from lerobot.motors.feetech import FeetechMotorsBus
     from xert.backends.so101_hw_backend import MOTOR_TABLE
@@ -42,15 +46,18 @@ def execute(args):
         args.joint_map, spec, provenance["sha256"])
     names = [m for m, _, _ in MOTOR_TABLE]
     bus = _bus(args.port, calibration)
-    bus.connect()
     try:
+        bus.connect()
         ticks = bus.sync_read("Present_Position", normalize=False)
         if sorted(ticks) != sorted(names):
             raise ValueError(f"Bus returned motors {sorted(ticks)}, expected {names}")
         # LeRobot's own normalization (motors_bus.py:854-881) on the SAME ticks: one acquisition, no second read.
         normalized = bus._normalize({i: ticks[m] for m, i, _ in MOTOR_TABLE})
     finally:
-        bus.disconnect(disable_torque=False)
+        # A failed handshake (e.g. a missing motor) leaves the port open; a failed open leaves nothing to close,
+        # and disconnect() would then raise over the real error.
+        if bus.is_connected:
+            bus.disconnect(disable_torque=False)
     # LeRobot clamps range-mode readings to the calibration interval before normalizing (motors_bus.py:867-873),
     # so a tick past either bound reads as a plausible value that misrepresents the pose. At the bound the clamp
     # changes nothing (owner default: strictly beyond counts; `<=`/`>=` would also refuse a gripper resting there).
