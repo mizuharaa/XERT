@@ -266,3 +266,36 @@ def test_backend_start_pose_keeps_the_motor_limit_check(tmp_path):
     np.testing.assert_array_equal(backend.read_state().q, start)
     with pytest.raises(ValueError, match="motor limits"):
         SO101HardwareBackend(spec, joint_map(tmp_path, gripper={"min": 50.0}), initial=start, echo=lambda _: None)
+
+
+def test_seeded_mapper_neutral_hand_targets_the_seed_pose_not_rest(tmp_path, buses, monkeypatch):
+    import mujoco
+    from test_motion_file import scripted_clip
+    from xert.__main__ import main
+    from xert.backends import MuJoCoBackend
+    from xert.retarget import calibrate
+    from xert.spec import load_spec
+    targets = []
+
+    class Watched(calibrate.CalibratedMapper):
+        def map(self, frame):
+            desired = super().map(frame)
+            targets.append(self.targets["grasp"][0].copy())
+            return desired
+
+    monkeypatch.setattr(calibrate, "CalibratedMapper", Watched)
+    read(tmp_path)
+    path = joint_map(tmp_path)
+    start = seed(json.loads((tmp_path / "read.json").read_text()), path)
+    monkeypatch.setattr(sys, "argv", ["xert", "hw-dry-run", "--spec", str(ROOT / "xert/spec/so101.yaml"),
+                                      "--map", str(path), "--clip", str(scripted_clip(tmp_path, [])),
+                                      "--output", str(tmp_path / "run"), "--seed-from", str(tmp_path / "read.json")])
+    main()  # The clip is six neutral frames: the hand never moves from its calibration pose.
+
+    def grasp(q):
+        model = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))
+        model.data.qpos[model.qids] = q
+        mujoco.mj_forward(model.model, model.data)
+        return model.data.site("grasp").xpos.copy()
+    assert targets and np.linalg.norm(grasp(start) - grasp(np.zeros(6))) > 1e-3
+    np.testing.assert_allclose(targets[0], grasp(start), rtol=0, atol=1e-12)

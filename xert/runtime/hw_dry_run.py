@@ -81,6 +81,10 @@ def execute(args):
     hardware = SO101HardwareBackend(spec, args.map, dry_run=True, initial=initial)
     # The mapper's IK needs a kinematic model; this MuJoCo copy is never stepped, only seeded with commanded q.
     kinematics = MuJoCoBackend(spec)
+    if initial is not None:  # The neutral calibration stores this model's grasp pose: start it from the seed too.
+        import mujoco
+        kinematics.data.qpos[kinematics.qids] = initial
+        mujoco.mj_forward(kinematics.model, kinematics.data)
     try:
         # ponytail: the clip calibrates itself, as in P3.6; neutral = first frame showing every mapped hand.
         neutral = next((f for f in frames if required_hands(profile) <= set(f.hands)), None)
