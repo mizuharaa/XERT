@@ -5,6 +5,7 @@ is LeRobot 0.6.1 `lerobot.motors.feetech.FeetechMotorsBus` (read-only `connect()
 first), never `lerobot.robots.so_follower.SO101Follower.connect()`, which writes configuration and enables torque.
 """
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 
@@ -19,6 +20,9 @@ UNITS = ("degrees", "range_0_100", "range_m100_100")  # lerobot/motors/motors_bu
 MEASURED = ("sign","units_per_rad", "zero_offset", "min", "max", "max_speed", "max_accel")
 # Completeness tiers: frame conversion (import-lerobot, replay-real) needs only the kinematic fields; motion needs all.
 TIERS = {"kinematic": MEASURED[:5], "motion": MEASURED}
+# LeRobot 0.6.1 SO-101 follower motors (so_follower.py:50-60, use_degrees=True), all model sts3215: (motor, id, units).
+MOTOR_TABLE = (("shoulder_pan", 1, "degrees"), ("shoulder_lift", 2, "degrees"), ("elbow_flex", 3, "degrees"),
+               ("wrist_flex", 4, "degrees"), ("wrist_roll", 5, "degrees"), ("gripper", 6, "range_0_100"))
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,30 @@ def load_joint_map(path, spec, *, dry_run, contents=None, require="motion"):
     if len({j["id"] for j in joints}) != len(joints):
         raise ValueError("Motor ids must be distinct")
     return mapped
+
+
+def compatible_map(path, spec, calibration_sha256, *, contents=None):
+    """(entries, sha256) of a joint map that can turn LeRobot SO-101 readings into radians, else ValueError.
+
+    Two distinct refusals: any TBD kinematic field (load_joint_map, "TBD ..."), and a complete map whose
+    (motor, id, units) differ from MOTOR_TABLE ("incompatible"). A map fitted on another calibration file is
+    refused too (import-lerobot's rule, lerobot_io.py:201-204).
+    """
+    contents = Path(path).read_bytes() if contents is None else contents
+    entries = load_joint_map(path, spec, dry_run=False, contents=contents, require="kinematic")
+    if [(e["motor"], e["id"], e["units"]) for e in entries] != list(MOTOR_TABLE):
+        raise ValueError(f"Joint map is incompatible with the SO-101 motor table (motor, id, units) {MOTOR_TABLE}")
+    fitted = (json.loads(contents).get("provenance") or {}).get("calibration", {}).get("sha256")
+    if fitted is not None and fitted != calibration_sha256:
+        raise ValueError("Joint map was fitted on a different calibration file than this read")
+    return entries, hashlib.sha256(contents).hexdigest()
+
+
+def to_radians(entries, motor):
+    """Inverse of `motor = sign * units_per_rad * rad + zero_offset`, float64: import-lerobot's conversion."""
+    sign, scale, offset = (np.array([e[k] for e in entries], dtype=np.float64)
+                           for k in ("sign", "units_per_rad", "zero_offset"))
+    return (np.asarray(motor, dtype=np.float64) - offset) / (sign * scale)
 
 
 class SO101HardwareBackend:
