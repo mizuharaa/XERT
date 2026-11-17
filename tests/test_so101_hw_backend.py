@@ -179,8 +179,6 @@ def test_speed_change_never_exceeds_accel_limit(tmp_path):
     assert np.all(np.abs(velocities) <= 30 + 1e-9) and motors.min() >= -57.3 - 1e-9
 
 
-@pytest.mark.xfail(strict=True, reason="P6.2 BLOCKER (a): the backend never learns of the e-stop, so it keeps "
-                                       "moving toward SafetyController's held q instead of holding its last value")
 def test_estop_holds_last_hardware_command(tmp_path):
     backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
     target = SPEC.rest.copy()
@@ -188,6 +186,61 @@ def test_estop_holds_last_hardware_command(tmp_path):
     records, sent = loop_run(backend, target, stop_after=30)
     assert records[-1]["phase"] == "estop" and len(sent) == 31
     assert sent[-1] == sent[-2] and backend.motor_velocity[0] == 0
+    assert backend.last_sent[0]["status"] == "hold" and "emitted" not in records[-1]
+
+
+def test_hold_needs_a_prior_send_and_increasing_time(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    with pytest.raises(RuntimeError, match="before any send_targets"):
+        backend.hold(0.)
+    backend.send_targets(SPEC.rest, .04)
+    for t in (.04, .0, float("nan")):  # Same, earlier and non-finite command times.
+        with pytest.raises(ValueError, match="strictly increasing"):
+            backend.hold(t)
+    backend.hold(.08)
+    assert backend.last_command == .08
+
+
+def test_estop_on_first_tick_emits_no_command(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    clock = SimClock()
+    records = run_loop(FreshFrames(clock), backend, SimpleNamespace(map=lambda f: SPEC.rest + .5), 3, clock=clock,
+                       sleep=clock.sleep, stop_requested=lambda: True)
+    assert backend.closed and backend.last_sent == [] and backend.last_command is None
+    assert len(records) == 1 and records[0]["phase"] == "estop" and records[0]["emitted"] is False
+    assert records[0]["command"] == SPEC.rest.tolist()
+
+
+# no-clamp: 1e3 units/s, 1e5 units/s^2 never bind; 1e6 would, by ~2e-12 rad, through braking_speed's bisection step.
+@pytest.mark.parametrize("limits", [QA, {**QA, "max_speed": 1e3, "max_accel": 1e5}], ids=["clamp", "no-clamp"])
+def test_controller_tracks_the_applied_hardware_command(tmp_path, monkeypatch, limits):
+    from xert.runtime import loop
+    controllers, checked, requested = [], [], []
+
+    class Watched(SafetyController):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            controllers.append(self)
+
+    monkeypatch.setattr(loop, "SafetyController", Watched)
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **limits), echo=lambda _: None)
+    clock = SimClock()
+
+    def on_step(record):
+        safety = controllers[0]
+        assert np.array_equal(safety.q, backend.q) and np.array_equal(safety.velocity, backend.qd)
+        checked.append(any(e["kind"] == "observe" for e in record["events"]))
+        requested.append(record["command"])
+
+    target = SPEC.rest + .5
+    run_loop(FreshFrames(clock), backend, SimpleNamespace(map=lambda f: target), 1, clock=clock,
+             sleep=clock.sleep, on_step=on_step)
+    assert len(checked) == 25
+    if limits is QA:  # 30 units/s at 57.3 units/rad is slower than the spec's 1 rad/s: the motor clamp binds.
+        assert any(checked)
+    else:  # Nothing binds: observe changes q only by the motor-unit round trip, never by an event.
+        assert not any(checked)
+        np.testing.assert_allclose(backend.q, requested[-1], rtol=0, atol=1e-12)
 
 
 def test_joint_map_ids_and_motor_names_are_validated():

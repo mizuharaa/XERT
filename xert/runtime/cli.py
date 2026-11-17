@@ -39,6 +39,13 @@ def add_commands(commands):
     parser.add_argument("--duration", type=float, default=30)
     from .hw_dry_run import add_command
     add_command(commands)
+    # Parser here, not in hw_read.py: that module is imported by the hw-read command only.
+    parser = commands.add_parser("hw-read", help="Read-only SO-101 Present_Position read (bare Feetech bus); "
+                                                 "no writes, no torque change")
+    parser.add_argument("--port", required=True, help="Serial port, e.g. COM7 or /dev/ttyACM0 (passed unchanged)")
+    parser.add_argument("--calibration", type=Path, required=True, help="LeRobot <robot.id>.json calibration file")
+    parser.add_argument("--output", type=Path, required=True, help="New read.json path")
+    parser.add_argument("--joint-map", type=Path, help="Kinematic-complete P6 joint map: adds radians")
 
 
 def escape_pressed():
@@ -119,6 +126,9 @@ def execute(args):
     if args.command == "hw-dry-run":
         from .hw_dry_run import execute as hw_dry_run
         return hw_dry_run(args)
+    if args.command == "hw-read":
+        from .hw_read import execute as hw_read
+        return hw_read(args)
     if args.command == "teleop":
         from .teleop import execute as teleop
         return teleop(args)

@@ -96,3 +96,28 @@ def test_stationary_target_is_reached_without_overshoot_from_rest():
     assert np.all(positions <= target + 1e-10)
     assert np.all(np.diff(positions, axis=0) >= -1e-10)
     np.testing.assert_allclose(positions[-1], target, atol=1e-8)
+
+
+def test_observe_velocity_is_between_consecutive_applied_samples():
+    embodiment = spec()
+    initial = embodiment.rest + .2
+    controller = SafetyController(embodiment, initial)
+    first = controller.step(initial + .1, t_now=0, t_capture=0).q
+    events = controller.observe(initial + .001)  # The hardware clamp let only 1 mrad through.
+    # First observed tick: the previous applied sample is the initial pose, not step's requested q.
+    np.testing.assert_array_equal(controller.velocity, ((initial + .001) - initial) / controller.dt)
+    np.testing.assert_array_equal(controller.q, initial + .001)
+    assert events == [{"kind": "observe", "requested": first.tolist(), "applied": (initial + .001).tolist()}]
+    assert controller.events[-1] == events[0]
+    assert controller.last_time == 0 and controller.last_watchdog_time == 0  # No clock in observe.
+    requested = controller.step(initial + .1, t_now=controller.dt, t_capture=controller.dt).q
+    assert controller.observe(requested) == []  # Applied == requested: no event, q unchanged.
+    np.testing.assert_array_equal(controller.velocity, (requested - (initial + .001)) / controller.dt)
+
+
+@pytest.mark.parametrize("bad", [[np.nan] * 6, [0.] * 5, [3.] * 6])
+def test_observe_refuses_nonfinite_misshaped_or_out_of_limit(bad):
+    controller = SafetyController(spec())
+    with pytest.raises(ValueError, match="Applied command"):
+        controller.observe(bad)
+    np.testing.assert_array_equal(controller.q, spec().rest)

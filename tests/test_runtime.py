@@ -152,6 +152,18 @@ def test_estop_callback_latches_hold():
     assert records[0]["phase"] == "estop" and not records[0]["latency_sample"]
 
 
+def test_measured_sim_state_is_never_fed_back_into_the_controller(monkeypatch):
+    def refuse(self, applied):
+        raise AssertionError("observe() called for measured sim state")
+    monkeypatch.setattr(SafetyController, "observe", refuse)  # The class run_loop instantiates.
+    backend = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))
+    source, clock = Source([frame(100 + k * .04 - .001, k) for k in range(10)]), Clock()
+    records = run_loop(source, backend, SimpleNamespace(map=lambda f: backend.spec.rest + .02 * f.sequence), .4,
+                       clock=clock, sleep=clock.sleep)
+    assert len(records) == 10 and all(r["phase"] == "live" for r in records)
+    assert not np.allclose(records[-1]["q"], records[0]["q"])  # The arm moved; every tick skipped observe.
+
+
 @pytest.mark.parametrize("bad_duration", [False, True])
 def test_cleanup_preserves_first_failure_and_attempts_both_resources(bad_duration):
     backend = MuJoCoBackend(load_spec(ROOT / "xert/spec/so101.yaml"))

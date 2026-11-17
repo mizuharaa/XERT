@@ -235,6 +235,13 @@ a measurement yet. The task list and each slice's handoff are in
   limits) from the LeRobot calibration file and at least two still-pose
   recordings with asserted sim angles. It reads files only and never opens the
   bus. `max_speed`/`max_accel` stay `TBD` for the owner to choose.
+- **Read-only position read (slice M).** `python -m xert hw-read --port <COMx>
+  --calibration <robot.id>.json --output <read.json> [--joint-map <map>]` makes
+  one `Present_Position` read through LeRobot's bare Feetech bus (connect,
+  sync_read, disconnect without torque change; no writes) and flags readings past
+  the calibration bounds as saturated. `xert hw-dry-run --seed-from <read.json>`
+  then starts the dry-run from that pose. Tested with a fake bus only; no arm has
+  been read. See [docs/handoff/M-p6-blockers.md](docs/handoff/M-p6-blockers.md).
 - **Block-stacking task (slice H).** `xert teleop --task stack` runs a second
   task on either arm: place `block` on `base_block`. Success is scored in
   Python (`xert/tasks/stack.py`): 12 ticks with the blocks in contact, both

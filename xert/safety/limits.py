@@ -38,6 +38,7 @@ class SafetyController:
                 np.any(self.q < spec.position_limits[:, 0]) or np.any(self.q > spec.position_limits[:, 1])):
             raise ValueError("Initial pose must be finite and inside limits")
         self.velocity = np.zeros_like(self.q)
+        self.applied_previous = self.q.copy()  # Last APPLIED sample (observe); never step's requested q.
         self.watchdog = Watchdog(spec.rest, stale_s, hold_s, return_s)
         self.last_time = None
         self.last_watchdog_time = None
@@ -53,6 +54,27 @@ class SafetyController:
 
     def _braking_speed(self, distance):
         return braking_speed(distance, self.spec.velocity_limits, self.spec.acceleration_limits, self.dt)
+
+    def observe(self, applied):
+        """Take the command the hardware was really given (after its motor-space clamp) as this controller's state.
+
+        Velocity is between consecutive APPLIED samples; self.q on entry is step's requested command, so using it
+        would give the clamp error, not a velocity. No clock: last_time and the watchdog clock are untouched.
+        Returns the events it recorded (an "observe" event when applied differs from requested).
+        """
+        applied = np.asarray(applied, dtype=float)
+        limits = self.spec.position_limits
+        # ponytail: 1e-10 rad slack, as MuJoCoBackend.send_targets, for the motor-unit round trip at a limit.
+        if (applied.shape != self.q.shape or not np.isfinite(applied).all() or
+                np.any(applied < limits[:, 0] - 1e-10) or np.any(applied > limits[:, 1] + 1e-10)):
+            raise ValueError("Applied command must be finite and inside limits")
+        events = []
+        if not np.allclose(applied, self.q, rtol=0, atol=1e-12):
+            events.append({"kind": "observe", "requested": self.q.tolist(), "applied": applied.tolist()})
+        self.velocity = (applied - self.applied_previous) / self.dt
+        self.q, self.applied_previous = applied.copy(), applied.copy()
+        self.events.extend(events)
+        return events
 
     def step(self, target, *, t_now, t_capture=None, estop=False, watchdog_now=None):
         """Nominal t_now sets clamp dt; optional wall clock ages capture timestamps."""
