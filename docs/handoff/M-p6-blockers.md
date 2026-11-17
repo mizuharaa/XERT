@@ -174,3 +174,8 @@ What the tests pin:
 ## TODO(daniel)
 
 None new.
+
+## On the merge (c406b6a), re-run by the integrator
+Base env whole suite 301 passed, 74 skipped, 14 xfailed (147 s); ctest 2/2; equivalence 16 seeds, max difference 0.0;
+the CI lerobot job's 16-file list in `.venv-lerobot` 145 passed, 1 skipped, 3 xfailed (448 s); the CI teleop job's
+22-file list plus `tests/test_hw_read.py` in `buildenv-teleop` 214 passed, 1 skipped, 3 xfailed (489 s). All exit 0.
