@@ -31,8 +31,11 @@ Before this slice the `SafetyController` and the hardware backend each kept thei
   the motor table, `raw_ticks`, `normalized`, `saturated`, `valid_for_seeding`, `invalid_reason`; with a map also
   `joint_map {path, sha256}`, `radians` (never clipped) and `inside_spec_limits`. No ledger row.
 - Saturation (M-06): LeRobot clamps range-mode readings to the calibration interval (`motors_bus.py:867-873`),
-  so a gripper tick of 2200 against [1000, 2000] reads 100 and its radians look fine. Any raw tick at or past
-  either calibration bound is listed in `saturated` and makes `valid_for_seeding` false.
+  so a gripper tick of 2200 against [1000, 2000] reads 100 and its radians look fine. Any raw tick strictly
+  past either calibration bound is listed in `saturated` and makes `valid_for_seeding` false (owner default
+  applied in the QA fix round; see "Owner decisions").
+- Guards (QA fix round): `hw-read` refuses any LeRobot other than 0.6.1 before building a bus, and a handshake
+  that raises with the port open still ends in `disconnect(disable_torque=False)`.
 - Conversion: `rad = (motor - zero_offset) / (sign * units_per_rad)` in float64 (`to_radians`), the same formula
   as `import-lerobot`'s `_hardware`; a test runs `_hardware` on the same values and compares exactly.
 
@@ -69,23 +72,37 @@ Refused: `valid_for_seeding: false`, a pose outside the spec position limits, a 
    `braking_speed` bisection step leaves 2.1e-12 rad between requested and applied (measured), above the 1e-12
    event threshold. `q` and `qd` still matched exactly in that case.
 
+8. **Closing after a failed connect (QA fix round).** QA asked for `disconnect(disable_torque=False)` in
+   `finally` even when `connect()` raises. It runs only when `bus.is_connected`: a handshake failure leaves the
+   port open and is closed; a port that never opened is not, because `disconnect()` is decorated
+   `check_if_not_connected` and would raise over the real error.
+
+## QA fix round (FIX-FIRST on 8d82bd3)
+
+- `40044e7` tests: `test_measured_sim_state_is_never_fed_back_into_the_controller` (`run_loop` on MuJoCo with a
+  moving target and `observe` patched to raise; the mutant without the `measured is False` guard survived every
+  earlier test), `hold`'s time check (same, earlier and non-finite `t_cmd`), and the saturation rule relaxed to
+  strictly beyond the range, with fixtures at exactly `range_min`/`range_max` (valid) and one tick past (saturated).
+- `689bfe1` `hw-read` refuses LeRobot other than 0.6.1; a failed handshake still closes the port without torque
+  writes.
+- Docs: the torque write line numbers (`motors_bus.py:556-559`), the owner decisions below, re-measured gates.
+
 ## How to verify
 
-Measured on this branch at `e906358` (the last code commit), 2026-11-17, Windows, one pytest process at a time:
+Measured on this branch at `689bfe1` (the last code commit), 2026-11-17, Windows, one pytest process at a time:
 
 | Gate | Result |
 | --- | --- |
-| Base env `pytest -q`, first 24 test files | 137 passed, 42 skipped, 6 xfailed, 103.8 s |
-| Base env `pytest -q`, last 24 test files | 158 passed, 32 skipped, 8 xfailed, 8 subtests passed, 64.0 s |
-| Base env whole suite (sum) | 295 passed, 74 skipped, 14 xfailed (slice L: 274 / 73 / 15) |
+| Base env `pytest -q`, first 24 test files | 142 passed, 42 skipped, 6 xfailed, 94.2 s |
+| Base env `pytest -q`, last 24 test files | 159 passed, 32 skipped, 8 xfailed, 8 subtests passed, 73.3 s |
+| Base env whole suite (sum) | 301 passed, 74 skipped, 14 xfailed (slice L: 274 / 73 / 15) |
 | `ctest --test-dir build -C Release --output-on-failure` | 2/2 passed |
 | `scripts/equivalence_check.py` | 16 seeds identical, max observation difference 0.0 |
-| `tests/test_hw_read.py` in the LeRobot 0.6.1 env (`build/venv-teleop` of the main checkout) | 13 passed, 10.8 s |
-| The lerobot-only signature test alone, same env | 1 passed, 6.2 s |
+| `tests/test_hw_read.py` in the LeRobot 0.6.1 env (`build/venv-teleop` of the main checkout) | 18 passed, 14.4 s |
 
-The delta from slice L is +21 passed, +1 skipped, -1 xfailed: the un-xfailed e-stop test, 2 more backend tests,
-2 `run_loop` observe cases, 4 `observe` unit tests and 12 `test_hw_read.py` tests (its 13th, the signature test,
-is the extra skip in the base env).
+The delta from slice L is +27 passed, +1 skipped, -1 xfailed: the un-xfailed e-stop test, 2 more backend tests,
+2 `run_loop` observe cases, 4 `observe` unit tests, the sim no-observe test and 17 `test_hw_read.py` tests (its
+18th, the LeRobot signature test, is the extra skip in the base env).
 
 ```
 .venv/Scripts/python.exe -m pytest -q tests/test_so101_hw_backend.py tests/test_safety.py tests/test_hw_read.py tests/test_runtime.py tests/test_hw_env_check.py
@@ -96,13 +113,15 @@ is the extra skip in the base env).
 What the tests pin:
 - (a) `test_estop_holds_last_hardware_command` (formerly strict xfail): the last two motor targets are equal and
   `motor_velocity` is 0. `test_estop_on_first_tick_emits_no_command`: zero `last_sent` rows, one record with
-  `emitted: false`, clean close. `test_hold_before_any_send_raises`.
+  `emitted: false`, clean close. `test_hold_needs_a_prior_send_and_increasing_time`.
 - (b) `test_controller_tracks_the_applied_hardware_command[clamp|no-clamp]`: after every tick of a `run_loop`,
   `safety.q == backend.q` and `safety.velocity == backend.qd` exactly. `test_observe_velocity_is_between_
   consecutive_applied_samples` (first tick uses the initial pose; no clock touched) and three refusals.
+  `test_measured_sim_state_is_never_fed_back_into_the_controller` (sim runs never call `observe`).
 - (c) fake-bus call list, `read.json` fields, no ledger row, motor-set mismatch (port still closed with
   `disable_torque=False`), TBD vs incompatible map (including a complete `range_m100_100` body map), the
   calibration-sha rule, conversion equal to `_hardware`, unclipped out-of-limit radians, the saturated gripper,
+  ticks exactly at and one past the calibration bounds, the 0.6.1 version gate, a failed handshake or open,
   the seed round trip through the CLI, two maps with the same calibration and different `zero_offset`, stale and
   tampered radians, seed refusals, the backend's motor-limit check on the start pose, and the mapper's first
   grasp target equal to the FK of the seed (not of rest).
@@ -130,10 +149,25 @@ What the tests pin:
 ## Owner decisions
 
 - **Measured-position feedback during motion** (`Present_Position` into the controller): not built.
-- **Saturation at the bound.** A tick exactly at `range_min` or `range_max` counts as saturated, for every motor.
-  A gripper resting fully closed at its calibration minimum will therefore refuse seeding. Body joints read in
-  degrees are not clamped by LeRobot (`motors_bus.py:874-877`), so for them this is a stricter rule than
-  LeRobot needs. Keep it, or relax it to "beyond" for the gripper.
+- **Saturation rule: strictly beyond, applied as the recommended default.** `saturated` lists a motor only when
+  `tick < range_min or tick > range_max` (`hw_read.py`). At exactly the bound LeRobot's clamp
+  (`motors_bus.py:867`) changes nothing, so the normalized value is exact; information is lost only past it, and
+  body joints in degrees are never clamped (`:874-877`). The first build used "at or beyond", which would also
+  refuse a gripper resting fully closed at its calibration minimum. To reverse: change the comparison to
+  `<=`/`>=` and flip the boundary case in `test_saturation_counts_only_ticks_strictly_beyond_the_calibration_range`.
+- **Motor EEPROM vs calibration file.** `hw-read` does not check that the calibration stored in the motors matches
+  the file. `SOFollower.connect` does, through `bus.is_calibrated` (`so_follower.py:99`, `feetech.py:228-245`):
+  it compares `Homing_Offset` and `Min/Max_Position_Limit` using `read()` only, 18 register reads (6 motors x 3,
+  `read_calibration` at `feetech.py:247-266`) beyond the approved call list. If they differ, `Present_Position`
+  is relative to a different homing offset and every sha check still passes. Decide before a seed is used for
+  real motion.
+- **Watchdog stale-input hold stays on `send_targets`.** Only the e-stop uses `backend.hold`. QA probe: in the
+  watchdog hold the motor acceleration stayed within the fixture's 60 units/s^2 and the controller tracked the
+  backend with gap 0.0. Routing it through `backend.hold` would stop instantly on every camera dropout and change
+  the law's semantics; that is Daniel's call.
+- **Seed freshness.** `seed_from` trusts `valid_for_seeding` and `normalized` from the file and does not check
+  `time_utc`. Fine for a dry run; real motion should require a fresh read. Its 1e-9 round-trip check
+  (`hw_dry_run.py:44`) is defensive: `to_radians` and `_to_motor` are exact inverses (QA: ~1e-12 at 4096 units).
 - **Opening the bus.** `xert hw-read` is the first XERT command that opens the servo bus. Running it needs
   Daniel's explicit OK and the arm present (TASKS.md stop point).
 
