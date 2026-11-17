@@ -128,10 +128,34 @@ class SO101HardwareBackend:
                             "clamped": not np.isclose(motor, wanted, rtol=0, atol=1e-9)})
         self.qd, self.q = (applied - self.q) / self.dt, applied
         self.t = self.last_command = float(t_cmd)
+        self._print(t_cmd, records)
+
+    def hold(self, t_cmd):
+        """E-stop: re-send the last motor targets at zero velocity, never the controller's frozen q.
+
+        run_loop calls it only after a send; with nothing sent there is no hardware command to hold.
+        """
+        if self.closed:
+            raise RuntimeError("Backend is closed")
+        if self.last_command is None:
+            raise RuntimeError("hold() before any send_targets: there is no last hardware command to hold")
+        if not np.isfinite(t_cmd) or t_cmd <= self.last_command:
+            raise ValueError("Command timestamps must be finite and strictly increasing")
+        self.motor_velocity = [0.0] * len(self.q)
+        self.qd = np.zeros_like(self.q)
+        self.t = self.last_command = float(t_cmd)
+        self._print(t_cmd, [
+            {"joint": name, "status": "unmapped", "sim_target": float(q)} if entry is None else
+            {"joint": name, "status": "hold", "motor": entry["motor"], "id": entry["id"], "units": entry["units"],
+             "sim_target": float(q), "motor_target": motor, "clamped": False}
+            for name, entry, q, motor in zip(self.spec.joint_names, self.map, self.q, self.motor)])
+
+    def _print(self, t_cmd, records):
         self.last_sent = records
         self.echo(f"[dry-run, no hardware] t={t_cmd:.3f} " + " | ".join(
             f"{r['joint']}: unmapped (sim {r['sim_target']:+.4f} rad)" if r["status"] == "unmapped" else
-            f"{r['joint']}: id {r['id']} -> {r['motor_target']:+.3f} {r['units']}{' clamped' if r['clamped'] else ''}"
+            f"{r['joint']}: id {r['id']} -> {r['motor_target']:+.3f} {r['units']}"
+            f"{' clamped' if r['clamped'] else ''}{' hold' if r['status'] == 'hold' else ''}"
             for r in records))
 
     def close(self):

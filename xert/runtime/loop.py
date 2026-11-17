@@ -29,6 +29,7 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
         previous_capture = -float("inf")
         applied_sequences = set()
         tick = 0
+        sent_any = False
         while tick * dt < duration:
             deadline = start + tick * dt
             sleep(max(0, deadline - clock()))
@@ -51,7 +52,17 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
             sent = clock()
             if sent - deadline >= dt:
                 raise RuntimeError("Retargeting missed control deadline; no late command sent")
-            backend.send_targets(command.q, tick * dt)
+            emitted = True
+            if command.phase == "estop" and hasattr(backend, "hold"):
+                # The hardware backend holds ITS last motor targets; with nothing ever sent, nothing is sent.
+                # Sim backends have no hold: for a position servo the frozen command.q already is a hold.
+                if sent_any:
+                    backend.hold(tick * dt)
+                else:
+                    emitted = False
+            else:
+                backend.send_targets(command.q, tick * dt)
+            sent_any |= emitted
             state = backend.read_state()
             applied = clock()
             valid = frame is not None and desired is not None and command.phase == "live"
@@ -69,6 +80,8 @@ def run_loop(source, backend, mapper, duration, *, clock=time.perf_counter, slee
                       "phase": command.phase, "valid_motion": bool(valid), "latency_sample": bool(sample),
                       "handedness_scores": {} if frame is None else {name: h.handedness_score for name, h in frame.hands.items()},
                       "tracking_confidence": None, "deadline_overrun": bool(applied > deadline + dt)}
+            if not emitted:
+                record["emitted"] = False  # Only this first-tick e-stop record carries the key.
             if getattr(state, "measured", True) is False:
                 record["state_measured"] = False  # Only unmeasured state is marked; sim traces stay unchanged.
             records.append(record)

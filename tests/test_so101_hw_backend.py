@@ -179,8 +179,6 @@ def test_speed_change_never_exceeds_accel_limit(tmp_path):
     assert np.all(np.abs(velocities) <= 30 + 1e-9) and motors.min() >= -57.3 - 1e-9
 
 
-@pytest.mark.xfail(strict=True, reason="P6.2 BLOCKER (a): the backend never learns of the e-stop, so it keeps "
-                                       "moving toward SafetyController's held q instead of holding its last value")
 def test_estop_holds_last_hardware_command(tmp_path):
     backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
     target = SPEC.rest.copy()
@@ -188,6 +186,23 @@ def test_estop_holds_last_hardware_command(tmp_path):
     records, sent = loop_run(backend, target, stop_after=30)
     assert records[-1]["phase"] == "estop" and len(sent) == 31
     assert sent[-1] == sent[-2] and backend.motor_velocity[0] == 0
+    assert backend.last_sent[0]["status"] == "hold" and "emitted" not in records[-1]
+
+
+def test_hold_before_any_send_raises(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    with pytest.raises(RuntimeError, match="before any send_targets"):
+        backend.hold(0.)
+
+
+def test_estop_on_first_tick_emits_no_command(tmp_path):
+    backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
+    clock = SimClock()
+    records = run_loop(FreshFrames(clock), backend, SimpleNamespace(map=lambda f: SPEC.rest + .5), 3, clock=clock,
+                       sleep=clock.sleep, stop_requested=lambda: True)
+    assert backend.closed and backend.last_sent == [] and backend.last_command is None
+    assert len(records) == 1 and records[0]["phase"] == "estop" and records[0]["emitted"] is False
+    assert records[0]["command"] == SPEC.rest.tolist()
 
 
 def test_joint_map_ids_and_motor_names_are_validated():
