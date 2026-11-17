@@ -189,10 +189,16 @@ def test_estop_holds_last_hardware_command(tmp_path):
     assert backend.last_sent[0]["status"] == "hold" and "emitted" not in records[-1]
 
 
-def test_hold_before_any_send_raises(tmp_path):
+def test_hold_needs_a_prior_send_and_increasing_time(tmp_path):
     backend = SO101HardwareBackend(SPEC, fixture_map(tmp_path, **QA), echo=lambda _: None)
     with pytest.raises(RuntimeError, match="before any send_targets"):
         backend.hold(0.)
+    backend.send_targets(SPEC.rest, .04)
+    for t in (.04, .0, float("nan")):  # Same, earlier and non-finite command times.
+        with pytest.raises(ValueError, match="strictly increasing"):
+            backend.hold(t)
+    backend.hold(.08)
+    assert backend.last_command == .08
 
 
 def test_estop_on_first_tick_emits_no_command(tmp_path):

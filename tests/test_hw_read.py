@@ -157,6 +157,15 @@ def test_saturated_gripper_is_not_valid_for_seeding(tmp_path, buses):
     assert "gripper" in record["invalid_reason"] and record["raw_ticks"]["gripper"] == 2200
 
 
+@pytest.mark.parametrize("ticks, saturated", [
+    ({"gripper": 1000, "shoulder_pan": 3000}, []),  # Exactly range_min / range_max: the clamp changes nothing.
+    ({"gripper": 999}, ["gripper"]), ({"shoulder_pan": 3001}, ["shoulder_pan"])])  # One tick past a bound.
+def test_saturation_counts_only_ticks_strictly_beyond_the_calibration_range(tmp_path, buses, ticks, saturated):
+    buses.ticks.update(ticks)
+    record = read(tmp_path)
+    assert record["saturated"] == saturated and record["valid_for_seeding"] is (not saturated)
+
+
 def test_tbd_and_incompatible_maps_are_distinct_refusals_before_the_port_opens(tmp_path, buses):
     with pytest.raises(ValueError, match="TBD"):
         read(tmp_path, TEMPLATE)

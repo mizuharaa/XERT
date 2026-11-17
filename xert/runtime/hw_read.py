@@ -52,8 +52,9 @@ def execute(args):
     finally:
         bus.disconnect(disable_torque=False)
     # LeRobot clamps range-mode readings to the calibration interval before normalizing (motors_bus.py:867-873),
-    # so a tick at or past either bound reads as a plausible value that misrepresents the pose.
-    saturated = [m for m in names if not calibration[m]["range_min"] < ticks[m] < calibration[m]["range_max"]]
+    # so a tick past either bound reads as a plausible value that misrepresents the pose. At the bound the clamp
+    # changes nothing (owner default: strictly beyond counts; `<=`/`>=` would also refuse a gripper resting there).
+    saturated = [m for m in names if ticks[m] < calibration[m]["range_min"] or ticks[m] > calibration[m]["range_max"]]
     record = {"version": 1, "mode": "read-only position read", "port": args.port,
               "time_utc": datetime.now(timezone.utc).isoformat(), "register": "Present_Position",
               "bus_calls": BUS_CALLS, "motor_writes": 0, "ledger_rows": 0, "calibration": provenance,
@@ -62,7 +63,7 @@ def execute(args):
               "normalized": {m: float(normalized[i]) for m, i, _ in MOTOR_TABLE},
               "saturated": saturated, "valid_for_seeding": not saturated,
               "invalid_reason": None if not saturated else
-              f"raw ticks at or beyond the calibration range_min/range_max: {saturated}"}
+              f"raw ticks beyond the calibration range_min/range_max: {saturated}"}
     if entries is not None:
         radians = to_radians(entries, list(record["normalized"].values()))
         limits = spec.position_limits
