@@ -198,3 +198,71 @@ def test_installed_lerobot_bus_matches_the_calls_and_table_hw_read_uses():
     for ticks in (TICKS, {**TICKS, "gripper": 2200, "shoulder_pan": 3300}):
         ids = {i: ticks[m] for m, i, _ in MOTOR_TABLE}
         assert bus._normalize(ids) == lerobot_normalize(CALIBRATION, ids)  # The fake mirrors the real formula.
+
+
+# ---- hw-dry-run --seed-from: the start pose comes from a read, recomputed with the dry-run's own map ----
+
+def seed(read_record, path):
+    from xert.runtime.hw_dry_run import seed_from
+    from xert.spec import load_spec
+    return seed_from(json.dumps(read_record).encode(), load_spec(ROOT / "xert/spec/so101.yaml"), path,
+                     path.read_bytes())
+
+
+def test_cli_dry_run_starts_from_the_recomputed_seed(tmp_path, buses, monkeypatch):
+    from test_motion_file import scripted_clip
+    from xert.__main__ import main
+    read(tmp_path)
+    path, output = joint_map(tmp_path), tmp_path / "run"
+    expected = seed(json.loads((tmp_path / "read.json").read_text()), path)
+    assert not np.allclose(expected, 0)  # Not the rest pose.
+    monkeypatch.setattr(sys, "argv", ["xert", "hw-dry-run", "--spec", str(ROOT / "xert/spec/so101.yaml"),
+                                      "--map", str(path), "--clip", str(scripted_clip(tmp_path, [(.01, .1)] * 3)),
+                                      "--output", str(output), "--seed-from", str(tmp_path / "read.json")])
+    main()
+    config = json.loads((output / "config.json").read_text())
+    assert config["start_pose"]["radians"] == expected.tolist()
+    first = json.loads((output / "trace.jsonl").read_text().splitlines()[0])
+    assert np.all(np.abs(np.array(first["q"]) - expected) <= 1.0 / 25 + 1e-12)  # One tick from the seed.
+    assert not ledger_path().exists()
+
+
+def test_two_maps_same_calibration_give_different_seeds_and_stale_radians_are_refused(tmp_path, buses):
+    a, b = joint_map(tmp_path, "a.json"), joint_map(tmp_path, "b.json", shoulder_pan={"zero_offset": 5.0})
+    plain = read(tmp_path, name="plain.json")  # No map: native values only.
+    seed_a, seed_b = seed(plain, a), seed(plain, b)
+    np.testing.assert_allclose(seed_a[0] - seed_b[0], 5.0 * np.pi / 180, rtol=0, atol=1e-12)
+    np.testing.assert_array_equal(seed_a[1:], seed_b[1:])
+    with_a = read(tmp_path, a, name="with_a.json")
+    with pytest.raises(ValueError, match="different joint map"):
+        seed(with_a, b)  # Its radians were computed with map a; never reused under map b.
+    tampered = {**with_a, "radians": {m: 0.0 for m in NAMES}}
+    np.testing.assert_array_equal(seed(tampered, a), seed_a)  # Saved radians are ignored, always recomputed.
+
+
+def test_seed_refusals(tmp_path, buses):
+    good = read(tmp_path, name="good.json")
+    path = joint_map(tmp_path)
+    bad_table = {**good, "motor_table": [{**row, "id": row["id"] + 10} for row in good["motor_table"]]}
+    with pytest.raises(ValueError, match="different motor table"):
+        seed(bad_table, path)
+    with pytest.raises(ValueError, match="TBD"):
+        seed(good, TEMPLATE)
+    with pytest.raises(ValueError, match="different calibration"):
+        seed(good, joint_map(tmp_path, "fitted.json", top={"provenance": {"calibration": {"sha256": "0" * 64}}}))
+    with pytest.raises(ValueError, match="outside the spec position limits"):
+        seed(good, joint_map(tmp_path, "far.json", shoulder_pan={"zero_offset": -120.0}))
+    buses.ticks["gripper"] = 2200
+    with pytest.raises(ValueError, match="not valid for seeding.*gripper"):
+        seed(read(tmp_path, name="saturated.json"), path)
+
+
+def test_backend_start_pose_keeps_the_motor_limit_check(tmp_path):
+    from xert.backends.so101_hw_backend import SO101HardwareBackend
+    from xert.spec import load_spec
+    spec = load_spec(ROOT / "xert/spec/so101.yaml")
+    start = spec.rest + .1
+    backend = SO101HardwareBackend(spec, joint_map(tmp_path), initial=start, echo=lambda _: None)
+    np.testing.assert_array_equal(backend.read_state().q, start)
+    with pytest.raises(ValueError, match="motor limits"):
+        SO101HardwareBackend(spec, joint_map(tmp_path, gripper={"min": 50.0}), initial=start, echo=lambda _: None)

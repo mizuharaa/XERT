@@ -18,6 +18,35 @@ def add_command(commands):
     parser.add_argument("--clip", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile", type=Path, default=ROOT / "configs/teleop/so101.json")
+    parser.add_argument("--seed-from", type=Path, help="read.json from `xert hw-read`: start pose instead of rest")
+
+
+def seed_from(read_bytes, spec, map_path, map_bytes):
+    """Start pose from a hw-read read.json, RECOMPUTED from its native readings with this run's validated map.
+
+    The saved radians are never trusted. Refused: a different motor table, valid_for_seeding false, an incompatible
+    or TBD map, a map other than the one the read was converted with, a map fitted on another calibration, a
+    motor-unit round trip off by more than 1e-9, or a pose outside the spec position limits.
+    """
+    import numpy as np
+    from xert.backends.so101_hw_backend import MOTOR_TABLE, SO101HardwareBackend, compatible_map, to_radians
+    read = json.loads(read_bytes)
+    if read.get("motor_table") != [{"joint": m, "motor": m, "id": i, "units": u} for m, i, u in MOTOR_TABLE]:
+        raise ValueError("Seed read has a different motor table than the SO-101 follower")
+    if read.get("valid_for_seeding") is not True:
+        raise ValueError(f"Seed read is not valid for seeding: {read.get('invalid_reason')}")
+    entries, map_sha = compatible_map(map_path, spec, read["calibration"]["sha256"], contents=map_bytes)
+    if "joint_map" in read and read["joint_map"]["sha256"] != map_sha:
+        raise ValueError("Seed read was converted with a different joint map than --map")
+    native = np.array([read["normalized"][m] for m, _, _ in MOTOR_TABLE], dtype=np.float64)
+    seed = to_radians(entries, native)
+    back = np.array([SO101HardwareBackend._to_motor(e, q) for e, q in zip(entries, seed)])
+    if not np.allclose(back, native, rtol=0, atol=1e-9):
+        raise ValueError("Seed radians do not map back to the saved motor readings within 1e-9")
+    limits = spec.position_limits
+    if np.any(seed < limits[:, 0]) or np.any(seed > limits[:, 1]):
+        raise ValueError(f"Seed pose {seed.tolist()} is outside the spec position limits")
+    return seed
 
 
 class SimClock:
@@ -47,7 +76,9 @@ def execute(args):
     spec = load_spec(args.spec, contents=inputs["spec_bytes"])
     profile = load_profile(args.profile, spec, contents=inputs["profile_bytes"])
     clip, frames = load_clip(args.clip, contents=clip_bytes)
-    hardware = SO101HardwareBackend(spec, args.map, dry_run=True)
+    seed_bytes = None if args.seed_from is None else args.seed_from.read_bytes()
+    initial = None if seed_bytes is None else seed_from(seed_bytes, spec, args.map, map_bytes)
+    hardware = SO101HardwareBackend(spec, args.map, dry_run=True, initial=initial)
     # The mapper's IK needs a kinematic model; this MuJoCo copy is never stepped, only seeded with commanded q.
     kinematics = MuJoCoBackend(spec)
     try:
@@ -68,7 +99,10 @@ def execute(args):
                   "map": str(args.map), "map_sha256": hashlib.sha256(map_bytes).hexdigest(),
                   "clip": str(args.clip), "clip_sha256": hashlib.sha256(clip_bytes).hexdigest(),
                   "clip_source": clip["source"], "calibration_frame_sequence": neutral.sequence,
-                  "clock": "simulated time", "state": "commanded targets echoed back, not measured"}
+                  "clock": "simulated time", "state": "commanded targets echoed back, not measured",
+                  "start_pose": "spec rest, assumed" if initial is None else {
+                      "source": "hw-read read.json, radians recomputed with --map", "path": str(args.seed_from),
+                      "sha256": hashlib.sha256(seed_bytes).hexdigest(), "radians": initial.tolist()}}
         (args.output / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
         clock = SimClock()
         with (args.output / "trace.jsonl").open("x", encoding="utf-8") as trace:

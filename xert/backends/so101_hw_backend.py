@@ -94,18 +94,20 @@ def to_radians(entries, motor):
 class SO101HardwareBackend:
     """Backend protocol. Hardware limits apply AFTER run_loop's SafetyController, on top of it, in motor space."""
 
-    def __init__(self, spec, joint_map_path, *, dry_run=True, echo=print):
+    def __init__(self, spec, joint_map_path, *, dry_run=True, echo=print, initial=None):
         if dry_run is not True:
             raise RuntimeError("SO-101 motion needs owner-supervised bring-up (P6.1/P6.2); only dry_run=True exists")
         self.spec, self.echo = spec, echo
         self.map = load_joint_map(joint_map_path, spec, dry_run=True)
         self.dt = 1 / spec.control_hz
-        # ponytail: the start pose is the spec rest pose, ASSUMED; real bring-up seeds it from a read-only position read.
-        self.q = spec.rest.astype(float)
+        # Start pose: a validated hw-read seed (hw-dry-run --seed-from), else the spec rest pose, ASSUMED.
+        self.q = np.asarray(spec.rest if initial is None else initial, dtype=float).copy()
+        if self.q.shape != spec.rest.shape or not np.isfinite(self.q).all():
+            raise ValueError("Start pose must be a finite ordered joint vector")
         self.qd = np.zeros_like(self.q)
         self.motor = [None if m is None else self._to_motor(m, r) for m, r in zip(self.map, self.q)]
         if any(m is not None and not e["min"] <= m <= e["max"] for m, e in zip(self.motor, self.map)):
-            raise ValueError("Rest pose maps outside the joint map's motor limits")
+            raise ValueError("Start pose maps outside the joint map's motor limits")
         self.motor_velocity = [0.0] * len(self.q)
         self.t = 0.0
         self.last_command = None
